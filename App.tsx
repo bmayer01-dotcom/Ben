@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { SectionCard } from './components/SectionCard';
 import { InputGroup } from './components/InputGroup';
@@ -69,14 +70,14 @@ function App() {
         <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="flex flex-col gap-8">
             <SectionCard title="Status Quo">
-              <InputGroup label="Searches per month" type="number" value={searchesPerMonth} onChange={e => setSearchesPerMonth(Number(e.target.value))} />
-              <InputGroup label="Search Conversion" type="number" value={searchConversion} onChange={e => setSearchConversion(Number(e.target.value))} unit="%" />
-              <InputGroup label="AOV (Average Order Value)" type="number" value={aov} onChange={e => setAov(Number(e.target.value))} unit="€" />
+              <InputGroup label="Searches per month" type="number" value={searchesPerMonth} onChange={e => setSearchesPerMonth(Number(e.target.value))} step={1000} />
+              <InputGroup label="Search Conversion" type="number" value={searchConversion} onChange={e => setSearchConversion(Number(e.target.value))} unit="%" step={0.1} />
+              <InputGroup label="AOV (Average Order Value)" type="number" value={aov} onChange={e => setAov(Number(e.target.value))} unit="€" step={0.01} />
             </SectionCard>
             
             <SectionCard title="FactFinder Effect">
-              <InputGroup label="Search Conversion Uplift" type="number" value={searchConversionUplift} onChange={e => setSearchConversionUplift(Number(e.target.value))} unit="%" />
-              <InputGroup label="AOV Uplift" type="number" value={aovUplift} onChange={e => setAovUplift(Number(e.target.value))} unit="%" />
+              <InputGroup label="Search Conversion Uplift" type="number" value={searchConversionUplift} onChange={e => setSearchConversionUplift(Number(e.target.value))} unit="%" step={0.1} />
+              <InputGroup label="AOV Uplift" type="number" value={aovUplift} onChange={e => setAovUplift(Number(e.target.value))} unit="%" step={0.1} />
             </SectionCard>
           </div>
           

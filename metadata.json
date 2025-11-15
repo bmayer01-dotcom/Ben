@@ -1,0 +1,5 @@
+{
+  "name": "FactFinder Uplift Calculator",
+  "description": "An ROI calculator to demonstrate the uplift effect of FactFinder's AI search on an online shop's revenue. Users can input their current search metrics and see the potential increase in turnover.",
+  "requestFramePermissions": []
+}

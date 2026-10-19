@@ -1,6 +1,6 @@
 // Erzeugt public/musik.wav: steigende, weltraumartige Elektronik, 60 s, prozedural (keine Samples).
 import { writeFileSync, mkdirSync } from "node:fs";
-import { CRAWL_START, DAUER as FRAMES, FINALE_START, HEADLINE_ENDE, INTRO_ENDE, N as ANZAHL, SPRUNG, SZENEN, ZOOM_ENDE } from "../src/world.ts";
+import { CRAWL_START, DAUER as FRAMES, FINALE_START, HEADLINE_ENDE, INTRO_ENDE, MS_START, N as ANZAHL, SPRUNG, SZENEN, ZOOM_ENDE } from "../src/world.ts";
 
 const SR = 44100;
 const T = (frame) => frame / 30; // frames → seconds
@@ -240,6 +240,9 @@ for (let b = Math.ceil(T(SZENEN[0].wachsEnde) / BEAT); b * BEAT < T_CRAWL - 0.2;
   whoosh(sek(SPRUNG - 24), 1.3, 0.3, true);
   aufprall(sek(SPRUNG + 4), 0.7, 880);
   aufprall(sek(SPRUNG + 12), 0.25, 1760);
+  // 2027 outlook
+  klick(sek(MS_START), 0.07, 2200);
+  aufprall(sek(MS_START + 10), 0.35, 1318);
 }
 
 // ---------- Normalisieren, sanft begrenzen, WAV schreiben ----------

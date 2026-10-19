@@ -2,8 +2,8 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import { DS, grotesk, inter } from "./design.ts";
-import { clamp01, expoOut, prog } from "./ui.tsx";
-import { CRAWL_START, DAUER, H, SPRUNG, W } from "./world.ts";
+import { clamp01, expoOut, prog, Zeile } from "./ui.tsx";
+import { CRAWL_START, DAUER, H, MS_START, SPRUNG, W } from "./world.ts";
 
 const zufall = (seed: number) => () => {
   seed = (seed * 16807) % 2147483647;
@@ -57,6 +57,7 @@ export const Crawl: React.FC<{ f: number }> = ({ f }) => {
   const blitz = Math.sin(Math.PI * prog(f, SPRUNG - 2, 22));
   const schluss = expoOut(prog(f, SPRUNG + 8, 30));
   const fussnote = prog(f, SPRUNG + 40, 16);
+  const hoch = expoOut(prog(f, MS_START - 8, 22));
   return (
     <AbsoluteFill style={{ background: DS.background, opacity: ein }}>
       <svg width={W} height={H} style={{ position: "absolute" }}>
@@ -97,9 +98,23 @@ export const Crawl: React.FC<{ f: number }> = ({ f }) => {
       {blitz > 0 ? <AbsoluteFill style={{ background: `radial-gradient(circle at 50% ${(MY / H) * 100}%, rgba(255,255,255,${0.95 * blitz}) 0%, rgba(76,214,118,${0.55 * blitz}) 35%, rgba(6,10,8,0) 75%)` }} /> : null}
       {/* final line */}
       {schluss > 0 ? (
-        <div style={{ position: "absolute", left: 60, right: 60, top: 470, textAlign: "center", opacity: schluss, transform: `scale(${1.25 - 0.25 * schluss})`, filter: `blur(${(1 - schluss) * 16}px)` }}>
+        <div style={{ position: "absolute", left: 60, right: 60, top: 470 - hoch * 230, textAlign: "center", opacity: schluss, transform: `scale(${1.25 - 0.25 * schluss - 0.12 * hoch})`, filter: `blur(${(1 - schluss) * 16}px)` }}>
           <div style={{ fontFamily: grotesk, fontWeight: 700, fontSize: 92, lineHeight: "102px", letterSpacing: "-0.03em", color: DS.foreground }}>
             The sheer scale is <span style={{ color: DS.primary, textShadow: "0 0 50px rgba(76,214,118,0.55)" }}>unprecedented.</span>
+          </div>
+        </div>
+      ) : null}
+      {/* 2027 outlook */}
+      {f >= MS_START ? (
+        <div style={{ position: "absolute", left: 70, right: 70, top: 500, textAlign: "center" }}>
+          <Zeile f={f} start={MS_START}>
+            <div style={{ fontFamily: inter, fontSize: 42, lineHeight: "54px", color: "#B4BDB8" }}>For 2027, Morgan Stanley projects that the top U.S. hyperscalers will reach</div>
+          </Zeile>
+          <div style={{ marginTop: 16, opacity: clamp01(prog(f, MS_START + 8, 8)), transform: `scale(${1.2 - 0.2 * expoOut(prog(f, MS_START + 8, 16))})` }}>
+            <div style={{ fontFamily: grotesk, fontWeight: 700, fontSize: 124, lineHeight: "136px", letterSpacing: "-0.04em", color: DS.primary, textShadow: "0 0 55px rgba(76,214,118,0.55)", fontVariantNumeric: "tabular-nums" }}>
+              $1.2 trillion
+            </div>
+            <div style={{ fontFamily: grotesk, fontWeight: 600, fontSize: 52, lineHeight: "62px", color: DS.foreground }}>in capex.</div>
           </div>
         </div>
       ) : null}

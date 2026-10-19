@@ -40,7 +40,8 @@ export const ZOOM_ENDE = FINALE_START + 80;
 export const FINALE_ENDE = FINALE_START + 240;
 export const CRAWL_START = FINALE_ENDE;
 export const SPRUNG = CRAWL_START + 300; // light-speed jump
-export const DAUER = SPRUNG + 140; // 1850 frames ≈ 62 s
+export const MS_START = SPRUNG + 110; // closing line: 2027 outlook
+export const DAUER = MS_START + 150; // 1970 frames ≈ 66 s
 
 // ---------- Easing ----------
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));

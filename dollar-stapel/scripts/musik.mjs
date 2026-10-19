@@ -1,5 +1,6 @@
 // Erzeugt public/musik.wav: steigende, weltraumartige Elektronik, 60 s, prozedural (keine Samples).
 import { writeFileSync, mkdirSync } from "node:fs";
+import { FINALE_START, HOOK_ENDE, HOOK_LANDUNGEN, KAL_LANDUNGEN, SZENEN, wachsEnde, wachsStart, ZOOM_ENDE } from "../src/world.ts";
 
 const SR = 44100;
 const DAUER = 60;
@@ -162,10 +163,81 @@ for (let b = Math.ceil(24 / BEAT); b * BEAT < 54.5; b++) {
   }
 }
 
+// ---------- Sounddesign, framegenau aus der Timeline ----------
+{
+  const FPSV = 30;
+  const sek = (frame) => frame / FPSV;
+  const add = (t0, len, fn, pan = 0.5) => {
+    const i0 = Math.floor(t0 * SR);
+    for (let j = 0; j < len * SR && i0 + j < N; j++) {
+      if (i0 + j < 0) continue;
+      const v = fn(j / SR);
+      L[i0 + j] += v * (1 - pan) * 2;
+      R[i0 + j] += v * pan * 2;
+    }
+  };
+  // Papier-Schlag: kurzes gefiltertes Rauschen
+  const papier = (t0, amp) => {
+    const f = tiefpass();
+    let alt = 0;
+    add(t0, 0.09, (t) => {
+      const n = rnd() * 2 - 1;
+      const hp = n - alt; alt = n;
+      return f(hp, 5200, 0.5) * Math.exp(-t * 55) * amp;
+    }, 0.45 + rnd() * 0.1);
+  };
+  // Whoosh: Rauschen mit wanderndem Filter
+  const whoosh = (t0, len, amp, steigend = false) => {
+    const f = tiefpass();
+    add(t0, len, (t) => {
+      const u = t / len;
+      const huell = Math.sin(Math.PI * Math.min(1, steigend ? u * u : u));
+      const fc = steigend ? 300 + 6000 * u * u : 600 + 3800 * Math.sin(Math.PI * u);
+      return f(rnd() * 2 - 1, fc, 0.25) * huell * amp;
+    });
+  };
+  // Aufprall: tiefer Puls + heller Ping
+  const aufprall = (t0, amp, ping = 1568) => {
+    let ph = 0;
+    add(t0, 0.6, (t) => {
+      ph += (55 + 80 * Math.exp(-t * 25)) / SR;
+      const tief = Math.sin(2 * Math.PI * ph) * Math.exp(-t * 9);
+      const hell = (Math.sin(2 * Math.PI * ping * t) + 0.4 * Math.sin(2 * Math.PI * ping * 1.5 * t)) * Math.exp(-t * 7) * 0.35;
+      return (tief + hell) * amp;
+    });
+  };
+  const klick = (t0, amp, freq = 2400) => add(t0, 0.05, (t) => Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * 90) * amp);
+
+  // Hook: Scheine landen, dann Sog in die Papierkante
+  HOOK_LANDUNGEN.forEach((l, j) => papier(sek(l), j === 0 ? 0.35 : 0.22 - j * 0.004));
+  whoosh(sek(HOOK_ENDE - 12), 0.55, 0.22, true);
+  // Kalibrierung
+  KAL_LANDUNGEN.forEach((l) => papier(sek(l), 0.18));
+  whoosh(sek(143), 32 / FPSV, 0.12, true);
+  whoosh(sek(193), 40 / FPSV, 0.14, true);
+  // Projekt-Szenen: Schwenk, Aufprall des Icons, Karte
+  SZENEN.forEach((s) => {
+    const mag = s.id === "mag7";
+    whoosh(sek(s.start), s.schwenk / FPSV + 0.15, 0.24);
+    if (mag) whoosh(sek(wachsStart(s)), (wachsEnde(s) - wachsStart(s)) / FPSV, 0.1, true);
+    aufprall(sek(wachsEnde(s) + 2), mag ? 0.55 : 0.32, mag ? 1760 : 1568);
+    klick(sek(wachsEnde(s) + 6), 0.08);
+  });
+  // Finale: Zug zurück, Ankunft, Label-Ticks, Ring
+  whoosh(sek(FINALE_START), (ZOOM_ENDE - FINALE_START) / FPSV, 0.2, true);
+  aufprall(sek(ZOOM_ENDE), 0.5, 1175);
+  for (let z = 0; z < SZENEN.length; z++) klick(sek(1458 + z * 4 + 14), 0.06, 2000 + z * 180);
+  aufprall(sek(1546), 0.22, 2093);
+  // Endcard: Blöcke fallen, Mag7-Säule wächst
+  [0, 1, 2, 3].forEach((i) => aufprall(sek(1650 + 22 + i * 8 + 6), 0.22, 1046 + i * 130));
+  whoosh(sek(1650 + 58), 26 / FPSV, 0.14, true);
+  aufprall(sek(1650 + 84), 0.4, 1760);
+}
+
 // ---------- Normalisieren, sanft begrenzen, WAV schreiben ----------
 let peak = 0;
 for (let i = 0; i < N; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
-const gain = 0.9 / peak;
+const gain = 1.5 / peak; // tanh begrenzt weich, Ziel um -15 LUFS
 const buf = Buffer.alloc(44 + N * 4);
 buf.write("RIFF", 0); buf.writeUInt32LE(36 + N * 4, 4); buf.write("WAVE", 8);
 buf.write("fmt ", 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(2, 22);

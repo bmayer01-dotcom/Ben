@@ -10,7 +10,7 @@ export const DAUER = 1800;
 
 export const STAPEL_BREITE_PX = 60; // feste Bildschirmbreite, unabhängig vom Zoom
 export const BASIS_Y = 1180; // Grundlinie auf dem Bildschirm, solange sie im Bild ist
-export const SPITZE_Y = 450; // Ruhelage der Stapelspitze
+export const SPITZE_Y = 520; // Ruhelage der Stapelspitze
 
 const FINALE_ABSTAND_PX = 90;
 const FINALE_MAX_PX = 740;
@@ -63,6 +63,12 @@ const fahrt = (a: Kamera, b: Kamera, u: number, schwenk: boolean): Kamera => {
 
 // ---------- Kalibrierung 90–240 ----------
 const KAL_RAHMEN: Rahmen = { X: 640, kS: K_MAKRO, L: 730 };
+// Hook: Landezeitpunkte der fallenden Scheine (auch für das Sounddesign).
+export const HOOK_LANDUNGEN = Array.from({ length: 24 }, (_, j) =>
+  Math.round(j === 0 ? 30 : 36 + 58 * Math.pow(j / 23, 0.7)),
+);
+export const HOOK_ENDE = 105;
+
 // Kalibrierung beginnt bei Frame 105 (nach dem Hook).
 export const KAL_LANDUNGEN = [119, 125, 131, 137];
 export const kalScheine = (f: number): number => {

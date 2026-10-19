@@ -14,7 +14,7 @@ export const SPITZE_Y = 450; // Ruhelage der Stapelspitze
 
 const FINALE_ABSTAND_PX = 90;
 const FINALE_MAX_PX = 740;
-const FINALE_ERSTER_X = 330;
+const FINALE_ERSTER_X = 360;
 
 export const HOEHEN_KM = PROJEKTE.map((p) => hoeheKm(p.kosten_mrd_usd));
 export const K_FINALE = Math.max(...HOEHEN_KM) / FINALE_MAX_PX;
@@ -63,13 +63,13 @@ const fahrt = (a: Kamera, b: Kamera, u: number, schwenk: boolean): Kamera => {
 
 // ---------- Kalibrierung 90–240 ----------
 const KAL_RAHMEN: Rahmen = { X: 640, kS: K_MAKRO, L: 730 };
-export const KAL_LANDUNGEN = [104, 110, 116, 122];
+// Kalibrierung beginnt bei Frame 105 (nach dem Hook).
+export const KAL_LANDUNGEN = [119, 125, 131, 137];
 export const kalScheine = (f: number): number => {
-  if (f < 100) return 1;
-  if (f < 128) return 1 + KAL_LANDUNGEN.filter((l) => f >= l).length;
-  if (f < 160) return logLerp(4, 1e6, ease((f - 128) / 32));
-  if (f < 178) return 1e6;
-  if (f < 218) return logLerp(1e6, 1e9, ease((f - 178) / 40));
+  if (f < 143) return 1 + KAL_LANDUNGEN.filter((l) => f >= l).length;
+  if (f < 175) return logLerp(4, 1e6, ease((f - 143) / 32));
+  if (f < 193) return 1e6;
+  if (f < 233) return logLerp(1e6, 1e9, ease((f - 193) / 40));
   return 1e9;
 };
 const kalKamera = (f: number) => rahmen(KAL_X_KM, scheineKm(kalScheine(f)), KAL_RAHMEN);
@@ -97,16 +97,15 @@ const szene = (
 ): Szene => ({ id, start, ende, X, kS, L, schwenk: 20, wachsen });
 
 export const SZENEN: Szene[] = [
-  szene("burj", 240, 360, 620, 0.0014, 46),
-  szene("s21", 360, 480, 540, 0.02, 50),
-  szene("manhattan", 480, 600, 540, 0.05, 50),
-  szene("iss", 600, 720, 540, 0.2, 50),
-  szene("marshall", 720, 840, 540, 0.2, 50),
-  // Apollo und Interstate etwas weiter weg, damit die Erde am Bildrand steht.
-  szene("apollo", 840, 990, 860, 1, 66, HOEHEN_KM[5] / 95),
-  szene("interstate", 990, 1140, 900, 2, 66),
-  // Mag7: Kamera folgt der Spitze, die Basis verlässt das Bild.
-  { ...szene("mag7", 1140, 1380, 600, 2, 160, 2400), schwenk: 24 },
+  szene("burj", 270, 400, 620, 0.0014, 50),
+  szene("s21", 400, 525, 540, 0.02, 52),
+  szene("manhattan", 525, 645, 540, 0.05, 50),
+  szene("iss", 645, 765, 540, 0.2, 50),
+  szene("marshall", 765, 885, 540, 0.2, 50),
+  // Apollo etwas weiter weg, damit die Erde am Bildrand steht.
+  szene("apollo", 885, 1045, 860, 1, 70, HOEHEN_KM[5] / 95),
+  // Mag7: längste Fahrt, Kamera folgt der Spitze, die Basis verlässt das Bild.
+  { ...szene("mag7", 1045, 1380, 600, 2, 230, 2400), schwenk: 24 },
 ];
 
 export const wachsStart = (s: Szene) => s.start + s.schwenk;
@@ -123,7 +122,7 @@ export const stapelHoeheKm = (f: number, i: number): number => {
 };
 
 const endKamera = (i: number): Kamera =>
-  i < 0 ? kalKamera(239) : rahmen(stapelXKm(i), HOEHEN_KM[i], SZENEN[i]);
+  i < 0 ? kalKamera(SZENEN[0].start - 1) : rahmen(stapelXKm(i), HOEHEN_KM[i], SZENEN[i]);
 
 export const FINALE_START = 1380;
 export const ZOOM_ENDE = 1470;

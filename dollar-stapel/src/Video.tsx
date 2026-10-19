@@ -170,6 +170,26 @@ const Silhouette: React.FC<{ cam: Kamera; xKm: number; profil: [number, number][
 };
 
 // ---------- Stapel ----------
+// Leichte Schrägansicht: feste Tiefe in Pixeln, unabhängig vom Zoom.
+const TIEFE3D_X = 12;
+const TIEFE3D_Y = -7;
+const GRUEN_3D = { hell: "#7FA285", dunkel: "#5F8466", seite: "#4E6E55", deckel: "#9CBBA1" };
+const MINT_3D = { hell: "#6BE38F", dunkel: "#3FC86A", seite: "#00b666", deckel: "#A5F0BC" };
+const Verlaeufe: React.FC = () => (
+  <>
+    {([["front-gruen", GRUEN_3D], ["front-mint", MINT_3D]] as const).map(([id, t]) => (
+      <linearGradient key={id} id={id} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor={t.hell} />
+        <stop offset="1" stopColor={t.dunkel} />
+      </linearGradient>
+    ))}
+    <radialGradient id="erde-licht" cx="0.35" cy="0.3" r="0.75">
+      <stop offset="0" stopColor="#7FA8EA" />
+      <stop offset="0.55" stopColor={FARBE.erde} />
+      <stop offset="1" stopColor={FARBE.erdeNacht} />
+    </radialGradient>
+  </>
+);
 const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number }> = ({ r, mag, scheinPx }) => {
   const oben = Math.max(r.spitze, -20);
   const unten = Math.min(r.basis, H + 20);
@@ -187,20 +207,22 @@ const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number }> = ({ r
       scheine.push({ y: Math.max(y, r.spitze), n });
     }
   }
-  // Kanten liegen innerhalb des Rechtecks, damit die Pixelhöhe exakt bleibt.
+  // Die Front hat exakt die Maßstabshöhe; Seite und Deckel sind nur Tiefe (feste Bildschirmmaße).
+  const ton = mag ? MINT_3D : GRUEN_3D;
+  const x1 = x0 + r.breite;
+  const deckelSichtbar = r.spitze > -20;
   return (
     <g>
-      <rect x={x0} y={oben} width={r.breite} height={unten - oben} fill={mag ? DS.primary : FARBE.schein} />
+      <polygon points={`${x1},${oben} ${x1 + TIEFE3D_X},${oben + TIEFE3D_Y} ${x1 + TIEFE3D_X},${unten + TIEFE3D_Y} ${x1},${unten}`} fill={ton.seite} />
+      <rect x={x0} y={oben} width={r.breite} height={unten - oben} fill={`url(#${mag ? "front-mint" : "front-gruen"})`} />
       {scheine.map(({ y, n }) => (
         <g key={n} opacity={nah}>
           <rect x={x0} y={y} width={r.breite} height={Math.min(scheinPx, r.basis - n * scheinPx - y)} fill={FARBE.scheinTöne[n % 4]} />
-          <line x1={x0} x2={x0 + r.breite} y1={y + 0.75} y2={y + 0.75} stroke={kante} strokeWidth={1.5} />
+          <line x1={x0} x2={x1} y1={y + 0.75} y2={y + 0.75} stroke={kante} strokeWidth={1.5} />
         </g>
       ))}
-      <line x1={x0 + 1.5} x2={x0 + 1.5} y1={oben} y2={unten} stroke={kante} strokeWidth={3} />
-      <line x1={x0 + r.breite - 1.5} x2={x0 + r.breite - 1.5} y1={oben} y2={unten} stroke={kante} strokeWidth={3} />
-      {r.hoehePx > 6 && r.spitze > -20 ? (
-        <line x1={x0} x2={x0 + r.breite} y1={r.spitze + 1.5} y2={r.spitze + 1.5} stroke={kante} strokeWidth={3} />
+      {deckelSichtbar ? (
+        <polygon points={`${x0},${r.spitze} ${x0 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1},${r.spitze}`} fill={ton.deckel} />
       ) : null}
     </g>
   );
@@ -276,8 +298,7 @@ const Erde: React.FC<{ cam: Kamera }> = ({ cam }) => {
   if (e.r < 1 || e.x + e.r < 0 || e.x - e.r > W) return null;
   return (
     <g>
-      <circle cx={e.x} cy={e.y} r={e.r} fill={FARBE.erde} />
-      <path d={`M ${e.x} ${e.y - e.r} A ${e.r} ${e.r} 0 0 1 ${e.x} ${e.y + e.r} A ${e.r * 0.45} ${e.r} 0 0 0 ${e.x} ${e.y - e.r} Z`} fill={FARBE.erdeNacht} />
+      <circle cx={e.x} cy={e.y} r={e.r} fill="url(#erde-licht)" />
     </g>
   );
 };
@@ -296,7 +317,7 @@ const kostenText = (i: number) => PROJEKTE[i].kosten_anzeige ?? formatMrd(PROJEK
 const kostenKurz = (i: number) => PROJEKTE[i].kosten_anzeige?.split(" (")[0] ?? formatMrd(PROJEKTE[i].kosten_mrd_usd);
 
 const Panel: React.FC<{ style?: React.CSSProperties; children: React.ReactNode }> = ({ style, children }) => (
-  <div style={{ background: "rgba(11,17,14,0.94)", boxShadow: `0 0 0 1px ${DS.border}`, borderRadius: 12, padding: "18px 28px", color: DS.foreground, textAlign: "center", ...style }}>
+  <div style={{ background: "rgba(11,17,14,0.94)", boxShadow: `0 0 0 1px ${DS.border}, 0 18px 40px rgba(0,0,0,0.35)`, borderRadius: 12, padding: "18px 28px", color: DS.foreground, textAlign: "center", ...style }}>
     {children}
   </div>
 );
@@ -306,7 +327,7 @@ const Karte: React.FC<{ i: number; unten: number; deckung: number }> = ({ i, unt
   const mag = p.id === "mag7";
   return (
     <div style={{ position: "absolute", left: 40, right: 40, bottom: H - unten, opacity: deckung, transform: `translateY(${(1 - deckung) * 16}px)` }}>
-      <Panel style={mag ? { boxShadow: `0 0 0 2px ${DS.primary}` } : undefined}>
+      <Panel style={mag ? { boxShadow: `0 0 0 2px ${DS.primary}, 0 18px 40px rgba(0,0,0,0.35)` } : undefined}>
         <div style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, lineHeight: "56px", color: mag ? DS.primary : DS.foreground }}>{p.name}</div>
         <div style={{ fontFamily: inter, fontSize: 36, fontWeight: 600, lineHeight: "46px", marginTop: 4 }}>
           {kostenText(i)} <span style={{ color: DS.muted }}>·</span> {formatHoehe(HOEHEN_KM[i])}
@@ -319,7 +340,7 @@ const Karte: React.FC<{ i: number; unten: number; deckung: number }> = ({ i, unt
 
 const Zaehler: React.FC<{ km: number; deckung: number }> = ({ km, deckung }) =>
   deckung > 0 ? (
-    <div style={{ position: "absolute", right: 40, top: 1214, opacity: deckung, display: "flex", alignItems: "baseline", gap: 14 }}>
+    <div style={{ position: "absolute", right: 28, top: 1204, opacity: deckung, display: "flex", alignItems: "baseline", gap: 14, background: DS.card, boxShadow: `0 0 0 1px ${DS.border}`, borderRadius: 8, padding: "6px 14px" }}>
       <span style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>Höhe</span>
       <span style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, color: DS.foreground, fontVariantNumeric: "tabular-nums" }}>{formatHoehe(km)}</span>
     </div>
@@ -327,7 +348,7 @@ const Zaehler: React.FC<{ km: number; deckung: number }> = ({ km, deckung }) =>
 
 const zaehlerStand = (f: number): { km: number; deckung: number } => {
   if (f < SZENEN[0].start) {
-    return { km: scheineKm(kalScheine(f)), deckung: fade(f, 96, 104) };
+    return { km: scheineKm(kalScheine(f)), deckung: fade(f, 111, 119) };
   }
   const i = aktiveSzene(f);
   if (i < 0) return { km: HOEHEN_KM[HOEHEN_KM.length - 1], deckung: 1 - fade(f, FINALE_START, FINALE_START + 10) };
@@ -340,9 +361,9 @@ const zaehlerStand = (f: number): { km: number; deckung: number } => {
 };
 
 const KAL_TEXTE = [
-  { von: 100, bis: 142, text: `1 Schein = ${formatHoehe(scheineKm(1))}` },
-  { von: 154, bis: 190, text: `1 Mio. $ = ${formatHoehe(scheineKm(1e6))}` },
-  { von: 212, bis: 246, text: `1 Mrd. $ = ${formatHoehe(scheineKm(1e9))}` },
+  { von: 115, bis: 157, text: `1 Schein = ${formatHoehe(scheineKm(1))}` },
+  { von: 169, bis: 205, text: `1 Mio. $ = ${formatHoehe(scheineKm(1e6))}` },
+  { von: 227, bis: 276, text: `1 Mrd. $ = ${formatHoehe(scheineKm(1e9))}` },
 ];
 const KAL_TEXT_OBEN = 90;
 const KAL_TEXT_UNTEN = 190;
@@ -356,7 +377,7 @@ const ABWUERFE = (() => {
   const n = 24;
   const r = zufall(42);
   return Array.from({ length: n }, (_, j) => ({
-    landung: Math.round(j === 0 ? 20 : 26 + 54 * Math.pow(j / (n - 1), 0.7)),
+    landung: Math.round(j === 0 ? 20 : 26 + 66 * Math.pow(j / (n - 1), 0.7)),
     anzahl: Math.round(Math.pow(1000, j / (n - 1))),
     dx: j === 0 ? 0 : (r() - 0.5) * 36,
     dreh: (r() - 0.5) * 6,
@@ -365,7 +386,7 @@ const ABWUERFE = (() => {
 const nf = new Intl.NumberFormat("de-DE");
 
 const Hook: React.FC<{ f: number }> = ({ f }) => {
-  const aus = fade(f, 84, 96);
+  const aus = fade(f, 99, 111);
   if (aus >= 1) return null;
 
   // Stapelhöhe: wächst nach jeder Landung weich auf die neue Anzahl
@@ -447,8 +468,8 @@ const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }
           const y0 = LABEL_OBEN + zeile * LABEL_ZEILE + LABEL_H + 6;
           return d > 0 ? (
             <g key={i} opacity={d}>
-              <line x1={r.x} x2={r.x} y1={y0} y2={r.spitze - 8} stroke={farbe} strokeWidth={2} strokeOpacity={0.7} />
-              <circle cx={r.x} cy={r.spitze - 8} r={4} fill={farbe} />
+              <line x1={r.x + TIEFE3D_X / 2} x2={r.x + TIEFE3D_X / 2} y1={y0} y2={r.spitze + TIEFE3D_Y - 8} stroke={farbe} strokeWidth={2} strokeOpacity={0.7} />
+              <circle cx={r.x + TIEFE3D_X / 2} cy={r.spitze + TIEFE3D_Y - 8} r={4} fill={farbe} />
             </g>
           ) : null;
         })}
@@ -468,9 +489,7 @@ const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }
   );
 };
 
-const burjAnteil = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(
-  (PROJEKTE[0].kosten_mrd_usd / PROJEKTE[PROJEKTE.length - 1].kosten_mrd_usd) * 100,
-);
+const burjAnzahl = Math.floor(PROJEKTE[PROJEKTE.length - 1].kosten_mrd_usd / PROJEKTE[0].kosten_mrd_usd);
 
 const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => {
   const ring = fade(f, 1544, 1562);
@@ -480,14 +499,14 @@ const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => 
     <>
       <svg width={W} height={H} style={{ position: "absolute" }}>
         {ring > 0 ? (
-          <circle cx={burj.x} cy={burj.spitze} r={38} fill="none" stroke={DS.foreground} strokeWidth={4} strokeDasharray={umfang} strokeDashoffset={umfang * (1 - ring)} transform={`rotate(-90 ${burj.x} ${burj.spitze})`} />
+          <circle cx={burj.x + TIEFE3D_X / 2} cy={burj.spitze + TIEFE3D_Y / 2} r={38} fill="none" stroke={DS.foreground} strokeWidth={4} strokeDasharray={umfang} strokeDashoffset={umfang * (1 - ring)} transform={`rotate(-90 ${burj.x + TIEFE3D_X / 2} ${burj.spitze + TIEFE3D_Y / 2})`} />
         ) : null}
       </svg>
       <div style={{ ...zeile, fontFamily: grotesk, fontWeight: 600, opacity: fade(f, 1486, 1498) * (1 - fade(f, 1534, 1542)) }}>
         Alle Stapel im echten Größenverhältnis
       </div>
       <div style={{ ...zeile, fontFamily: inter, opacity: fade(f, 1546, 1558) }}>
-        Burj Khalifa: <b style={{ fontFamily: grotesk, fontWeight: 600 }}>{burjAnteil} %</b> des KI-Stapels
+        Der KI-Capex könnte <b style={{ fontFamily: grotesk, fontWeight: 600 }}>{burjAnzahl} Burj Khalifas</b> bauen.
       </div>
     </>
   );
@@ -497,7 +516,7 @@ const Endcard: React.FC<{ f: number }> = ({ f }) => {
   const d = fade(f, 1650, 1666);
   if (d <= 0) return null;
   return (
-    <AbsoluteFill style={{ background: `rgba(6,10,8,${0.96 * d})` }}>
+    <AbsoluteFill style={{ background: `rgba(6,10,8,${d})` }}>
       <div style={{ position: "absolute", left: 70, right: 70, top: 300, textAlign: "center", color: DS.foreground, fontFamily: grotesk, fontSize: 64, fontWeight: 600, lineHeight: "78px", opacity: fade(f, 1660, 1676) }}>
         Mehr als Apollo, Manhattan-Projekt, Marshallplan und ISS zusammen – <span style={{ color: DS.primary }}>in einem Jahr.</span>
       </div>
@@ -537,7 +556,7 @@ export const DollarStapel: React.FC = () => {
 
   const karten = SZENEN.map((s, i) => {
     const d = fade(f, wachsEnde(s) + 8, wachsEnde(s) + 18) * (1 - fade(f, s.ende, s.ende + 6));
-    return { i, d, unten: rects[i].spitze - 4 - 120 - 18 };
+    return { i, d, unten: rects[i].spitze + TIEFE3D_Y - 4 - 120 - 18 };
   }).filter((k) => k.d > 0);
 
   const e = erdeBild(cam);
@@ -556,6 +575,7 @@ export const DollarStapel: React.FC = () => {
       <Sterne cam={cam} />
       <svg width={W} height={H} style={{ position: "absolute" }}>
         <defs>
+          <Verlaeufe />
           <filter id="mb" filterUnits="userSpaceOnUse" x={-200} y={-200} width={W + 400} height={H + 400}>
             <feGaussianBlur stdDeviation={`${blurX} ${blurY}`} />
           </filter>
@@ -571,10 +591,10 @@ export const DollarStapel: React.FC = () => {
           <Wolken cam={cam} vorne={false} />
           <MarkerLinien cam={cam} />
           <Erde cam={cam} />
-          {f < 260 ? <Silhouette cam={cam} xKm={HOCHHAUS_X_KM} profil={HOCHHAUS_PROFIL} /> : null}
+          {f < 290 ? <Silhouette cam={cam} xKm={HOCHHAUS_X_KM} profil={HOCHHAUS_PROFIL} /> : null}
           <Silhouette cam={cam} xKm={BURJ_TURM_X_KM} profil={BURJ_PROFIL} />
-          {f < 260 ? <Stapel r={kalRect} mag={false} scheinPx={scheinPx} /> : null}
-          {f < 130 ? <FallenderSchein f={f} r={kalRect} scheinPx={scheinPx} /> : null}
+          {f < 290 ? <Stapel r={kalRect} mag={false} scheinPx={scheinPx} /> : null}
+          {f < 145 ? <FallenderSchein f={f} r={kalRect} scheinPx={scheinPx} /> : null}
           {rects.map((r, i) => (
             <Stapel key={i} r={r} mag={PROJEKTE[i].id === "mag7"} scheinPx={scheinPx} />
           ))}
@@ -583,7 +603,7 @@ export const DollarStapel: React.FC = () => {
             if (d <= 0) return null;
             const s = iconDrop(f, wachsEnde(SZENEN[i]));
             return (
-              <g key={i} transform={`translate(${r.x - 60} ${r.spitze - 124 - (1 - s) * 90})`} opacity={d}>
+              <g key={i} transform={`translate(${r.x + TIEFE3D_X / 2 - 60} ${r.spitze + TIEFE3D_Y / 2 - 122 - (1 - s) * 90})`} opacity={d}>
                 <ProjektIcon id={PROJEKTE[i].id} />
               </g>
             );

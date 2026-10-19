@@ -63,14 +63,6 @@ export const PROJEKTE: Projekt[] = [
     kontextzeile: "Mehr als doppelt so hoch, wie die Erde dick ist",
   },
   {
-    id: "interstate",
-    name: "Interstate Highways",
-    kosten_mrd_usd: 620,
-    laufzeit_badge: "37 Jahre",
-    icon: "Autobahnkreuz in Kleeblattform",
-    kontextzeile: "Würde 1,7-mal um den Äquator reichen",
-  },
-  {
     id: "mag7",
     name: "Mag7 Capex 2026",
     kosten_mrd_usd: 780,

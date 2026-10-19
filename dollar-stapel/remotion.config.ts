@@ -8,7 +8,10 @@
 import { Config } from "@remotion/cli/config";
 
 Config.setRspack(true);
-Config.setVideoImageFormat("jpeg");
+// Verlustfreie Einzelbilder + hohe Bitrate, damit Schrift scharf bleibt
+Config.setVideoImageFormat("png");
+Config.setCrf(15);
+Config.setX264Preset("slow");
 Config.setOverwriteOutput(true);
 Config.setDefaultPremountInSeconds(2);
 // In dieser Umgebung vorinstalliertes Chromium nutzen (Remotion-Download ist blockiert).

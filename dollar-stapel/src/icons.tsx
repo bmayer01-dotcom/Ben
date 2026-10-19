@@ -68,16 +68,6 @@ const Rakete = () => (
   </g>
 );
 
-const Kleeblatt = () => (
-  <g {...L}>
-    <path d="M60 2 V118 M2 60 H118" />
-    <circle cx="84" cy="36" r="18" />
-    <circle cx="36" cy="36" r="18" />
-    <circle cx="36" cy="84" r="18" />
-    <circle cx="84" cy="84" r="18" />
-  </g>
-);
-
 const Rack = () => (
   <g {...L}>
     <rect x="28" y="4" width="64" height="112" rx="6" />
@@ -99,7 +89,6 @@ const ICONS: Record<string, React.FC> = {
   iss: Iss,
   marshall: Kran,
   apollo: Rakete,
-  interstate: Kleeblatt,
   mag7: Rack,
 };
 

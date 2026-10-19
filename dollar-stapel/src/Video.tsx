@@ -7,7 +7,9 @@ import {
   staticFile,
   useCurrentFrame,
 } from "remotion";
-import { loadFont } from "@remotion/google-fonts/Inter";
+import { loadFont as ladeInter } from "@remotion/google-fonts/Inter";
+import { loadFont as ladeGrotesk } from "@remotion/google-fonts/SpaceGrotesk";
+import { loadFont as ladeMono } from "@remotion/google-fonts/JetBrainsMono";
 import { PROJEKTE } from "./data.ts";
 import { formatHoehe, formatKm, formatMrd, scheineKm } from "./scale.ts";
 import {
@@ -20,6 +22,7 @@ import {
   H,
   HOCHHAUS_X_KM,
   HOEHEN_KM,
+  KAL_LANDUNGEN,
   KAL_X_KM,
   kalScheine,
   markerLayout,
@@ -34,28 +37,35 @@ import {
 } from "./world.ts";
 import type { Kamera, StapelRect } from "./world.ts";
 import { ProjektIcon } from "./icons.tsx";
+import { SCHEIN_W, ScheinOben, TIEFE_X, TIEFE_Y } from "./schein.tsx";
 
-const { fontFamily } = loadFont("normal", {
-  weights: ["400", "600", "700", "800"],
-  subsets: ["latin"],
-});
+const inter = ladeInter("normal", { weights: ["400", "600"], subsets: ["latin"] }).fontFamily;
+const grotesk = ladeGrotesk("normal", { weights: ["500", "600", "700"], subsets: ["latin"] }).fontFamily;
+const mono = ladeMono("normal", { weights: ["400", "500"], subsets: ["latin"] }).fontFamily;
 
+// mAI-Consult-Tokens (dunkel wie die Website, hell #F3F8F5 für den Himmel am Boden)
+const DS = {
+  background: "#060a08",
+  card: "#0b110e",
+  border: "#1d2320",
+  borderStrong: "#343d38",
+  foreground: "#eff3f1",
+  muted: "#89918d",
+  primary: "#4cd676",
+  primaryDeep: "#00b666",
+  hell: "#F3F8F5",
+};
 const FARBE = {
-  boden: "#8EC5E8",
-  karman: "#0B1426",
-  all: "#05070D",
   schein: "#6B8F71",
   kante: "#4E6E55",
-  akzent: "#F5A623",
-  akzentKante: "#C27F12",
-  grund: "#1C232B",
-  silhouette: "#3A4B5C",
-  erde: "#2F6FA8",
-  erdeNacht: "#1F4C78",
+  scheinTöne: ["#6B8F71", "#759A7B", "#64886A", "#70947A"],
+  silhouette: "#9AA8A0",
+  erde: "#4278d2",
+  erdeNacht: "#2151af",
 };
 
-const TEXT_OBEN = 200;
-const TEXT_UNTEN = H - 340;
+const RAND = 60; // Textabstand oben/unten im 4:5-Format
+const TEXT_UNTEN = H - RAND;
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const fade = (f: number, a: number, b: number) => interpolate(f, [a, b], [0, 1], clamp);
@@ -69,20 +79,24 @@ const mix = (a: string, b: string, t: number) => {
   return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`;
 };
 const himmelFarbe = (alt: number) => {
-  if (alt <= 1) return mix(FARBE.boden, FARBE.boden, 0);
-  if (alt <= 100) return mix(FARBE.boden, FARBE.karman, Math.log10(alt) / 2);
-  if (alt <= 400) return mix(FARBE.karman, FARBE.all, Math.log10(alt / 100) / Math.log10(4));
-  return mix(FARBE.all, FARBE.all, 0);
+  if (alt <= 1) return mix(DS.hell, DS.hell, 0);
+  if (alt <= 100) return mix(DS.hell, DS.card, Math.log10(alt) / 2);
+  if (alt <= 400) return mix(DS.card, DS.background, Math.log10(alt / 100) / Math.log10(4));
+  return mix(DS.background, DS.background, 0);
 };
 const sternSicht = (alt: number) => clamp01(Math.log10(Math.max(alt, 1) / 100) / Math.log10(4));
 const hoeheBeiY = (cam: Kamera, y: number) => cam.cy + (H / 2 - y) * cam.k;
 
+// Stopps an festen Höhen, damit der Übergang bei jedem Zoom an der richtigen Stelle sitzt.
+const HIMMEL_HOEHEN = [0, 1, 2, 5, 10, 20, 50, 100, 200, 400];
 const Himmel: React.FC<{ cam: Kamera }> = ({ cam }) => {
-  const stops = Array.from({ length: 13 }, (_, i) => {
-    const y = (i / 12) * H;
-    return `${himmelFarbe(hoeheBeiY(cam, y))} ${((i / 12) * 100).toFixed(1)}%`;
-  });
-  return <AbsoluteFill style={{ background: `linear-gradient(to bottom, ${stops.join(",")})` }} />;
+  const yBei = (alt: number) => H / 2 - (alt - cam.cy) / cam.k;
+  const stops = [
+    { y: 0, c: himmelFarbe(hoeheBeiY(cam, 0)) },
+    ...HIMMEL_HOEHEN.map((alt) => ({ y: yBei(alt), c: himmelFarbe(alt) })).filter((p) => p.y > 0 && p.y < H),
+    { y: H, c: himmelFarbe(hoeheBeiY(cam, H)) },
+  ].sort((a, b) => a.y - b.y);
+  return <AbsoluteFill style={{ background: `linear-gradient(to bottom, ${stops.map((p) => `${p.c} ${((p.y / H) * 100).toFixed(3)}%`).join(",")})` }} />;
 };
 
 const zufall = (seed: number) => () => {
@@ -95,14 +109,14 @@ const zufall = (seed: number) => () => {
 
 const STERNE = (() => {
   const r = zufall(7);
-  return Array.from({ length: 34 }, () => ({ x: r() * W, y: r() * H, r: 1.4 + r() * 1.6, a: 0.4 + r() * 0.5 }));
+  return Array.from({ length: 30 }, () => ({ x: r() * W, y: r() * H, r: 1.3 + r() * 1.5, a: 0.35 + r() * 0.5 }));
 })();
 
 const Sterne: React.FC<{ cam: Kamera }> = ({ cam }) => (
   <svg width={W} height={H} style={{ position: "absolute" }}>
     {STERNE.map((s, i) => {
       const o = sternSicht(hoeheBeiY(cam, s.y)) * s.a;
-      return o > 0.01 ? <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#FFFFFF" opacity={o} /> : null;
+      return o > 0.01 ? <circle key={i} cx={s.x} cy={s.y} r={s.r} fill={DS.foreground} opacity={o} /> : null;
     })}
   </svg>
 );
@@ -115,13 +129,7 @@ const WOLKEN: Wolke[] = (() => {
   anker.forEach((ax, j) => {
     const r = zufall(100 + j);
     for (let n = 0; n < 9; n++) {
-      out.push({
-        x: ax + (r() - 0.5) * 30,
-        alt: 7 + r() * 4,
-        w: 2.5 + r() * 4,
-        h: 0.6 + r() * 0.6,
-        vorne: n % 3 === 0,
-      });
+      out.push({ x: ax + (r() - 0.5) * 30, alt: 7 + r() * 4, w: 2.5 + r() * 4, h: 0.6 + r() * 0.6, vorne: n % 3 === 0 });
     }
   });
   return out;
@@ -135,7 +143,7 @@ const Wolken: React.FC<{ cam: Kamera; vorne: boolean }> = ({ cam, vorne }) => (
       const ry = w.h / 2 / cam.k;
       if (rx < 2 || x + rx < -50 || x - rx > W + 50 || y + ry < -50 || y - ry > H + 50) return null;
       return (
-        <g key={i} fill="#FFFFFF" opacity={0.9 * clamp01((rx - 2) / 6)}>
+        <g key={i} fill="#FFFFFF" opacity={0.92 * clamp01((rx - 2) / 6)}>
           <ellipse cx={x} cy={y} rx={rx} ry={ry} />
           <ellipse cx={x - rx * 0.4} cy={y - ry * 0.5} rx={rx * 0.45} ry={ry * 0.8} />
           <ellipse cx={x + rx * 0.25} cy={y - ry * 0.6} rx={rx * 0.4} ry={ry * 0.9} />
@@ -151,6 +159,8 @@ const BURJ_PROFIL: [number, number][] = [
   [45, 0], [45, 160], [36, 160], [36, 310], [28, 310], [28, 440], [20, 440],
   [20, 560], [13, 560], [13, 640], [7, 640], [7, 700], [3, 700], [0.8, 828],
 ];
+const HOCHHAUS_PROFIL: [number, number][] = [[17, 0], [17, 92], [9, 92], [9, 100]];
+
 const Silhouette: React.FC<{ cam: Kamera; xKm: number; profil: [number, number][] }> = ({ cam, xKm, profil }) => {
   const rechts = profil.map(([b, h]) => zuBild(cam, xKm + b / 1000, h / 1000));
   const links = [...profil].reverse().map(([b, h]) => zuBild(cam, xKm - b / 1000, h / 1000));
@@ -158,7 +168,6 @@ const Silhouette: React.FC<{ cam: Kamera; xKm: number; profil: [number, number][
   if (hoehePx < 1 || rechts[0][0] < -200 || links[links.length - 1][0] > W + 200) return null;
   return <polygon points={[...rechts, ...links].map((p) => p.join(",")).join(" ")} fill={FARBE.silhouette} />;
 };
-const HOCHHAUS_PROFIL: [number, number][] = [[17, 0], [17, 92], [9, 92], [9, 100]];
 
 // ---------- Stapel ----------
 const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number }> = ({ r, mag, scheinPx }) => {
@@ -166,23 +175,27 @@ const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number }> = ({ r
   const unten = Math.min(r.basis, H + 20);
   if (unten <= oben || r.hoehePx <= 0) return null;
   const x0 = r.x - r.breite / 2;
-  const kante = mag ? FARBE.akzentKante : FARBE.kante;
-  const linien: number[] = [];
-  const linienDeckung = clamp01((scheinPx - 3) / 5);
-  if (linienDeckung > 0) {
-    const start = Math.max(1, Math.ceil((r.basis - unten) / scheinPx));
-    for (let n = start; ; n++) {
-      const y = r.basis - n * scheinPx;
-      if (y <= Math.max(oben, r.spitze + 0.5) || linien.length > 400) break;
-      linien.push(y);
+  const kante = mag ? DS.primaryDeep : FARBE.kante;
+  // In der Nahaufnahme einzelne Scheine (leicht unterschiedliche Töne), sonst glatte Säule.
+  const scheine: { y: number; n: number }[] = [];
+  const nah = clamp01((scheinPx - 3) / 5);
+  if (nah > 0) {
+    const start = Math.max(0, Math.floor((r.basis - unten) / scheinPx));
+    for (let n = start; n < start + 400; n++) {
+      const y = r.basis - (n + 1) * scheinPx;
+      if (y + scheinPx <= Math.max(oben, r.spitze)) break;
+      scheine.push({ y: Math.max(y, r.spitze), n });
     }
   }
   // Kanten liegen innerhalb des Rechtecks, damit die Pixelhöhe exakt bleibt.
   return (
     <g>
-      <rect x={x0} y={oben} width={r.breite} height={unten - oben} fill={mag ? FARBE.akzent : FARBE.schein} />
-      {linien.map((y, i) => (
-        <line key={i} x1={x0} x2={x0 + r.breite} y1={y} y2={y} stroke={kante} strokeWidth={2.5} opacity={linienDeckung} />
+      <rect x={x0} y={oben} width={r.breite} height={unten - oben} fill={mag ? DS.primary : FARBE.schein} />
+      {scheine.map(({ y, n }) => (
+        <g key={n} opacity={nah}>
+          <rect x={x0} y={y} width={r.breite} height={Math.min(scheinPx, r.basis - n * scheinPx - y)} fill={FARBE.scheinTöne[n % 4]} />
+          <line x1={x0} x2={x0 + r.breite} y1={y + 0.75} y2={y + 0.75} stroke={kante} strokeWidth={1.5} />
+        </g>
       ))}
       <line x1={x0 + 1.5} x2={x0 + 1.5} y1={oben} y2={unten} stroke={kante} strokeWidth={3} />
       <line x1={x0 + r.breite - 1.5} x2={x0 + r.breite - 1.5} y1={oben} y2={unten} stroke={kante} strokeWidth={3} />
@@ -193,44 +206,69 @@ const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number }> = ({ r
   );
 };
 
+// Fallender Einzelschein in der Kalibrier-Nahaufnahme
+const FallenderSchein: React.FC<{ f: number; r: StapelRect; scheinPx: number }> = ({ f, r, scheinPx }) => {
+  const landung = KAL_LANDUNGEN.find((l) => f < l && f >= l - 6);
+  if (landung === undefined) return null;
+  const t = (f - (landung - 6)) / 6;
+  const y = r.spitze - scheinPx - (1 - t * t) * 260;
+  return (
+    <rect x={r.x - r.breite / 2} y={y} width={r.breite} height={scheinPx} fill={FARBE.scheinTöne[KAL_LANDUNGEN.indexOf(landung) % 4]} stroke={FARBE.kante} strokeWidth={1.5} opacity={fade(f, landung - 6, landung - 4)} />
+  );
+};
+
 const iconDrop = (f: number, landung: number) =>
   spring({ frame: f - landung, fps: FPS, config: { damping: 8, stiffness: 170, mass: 0.6 } });
 
 // ---------- Marker ----------
-type Block = { oben: number; unten: number; deckung: number };
+type Block = { links: number; rechts: number; oben: number; unten: number; deckung: number };
 
 const MarkerLinien: React.FC<{ cam: Kamera }> = ({ cam }) => (
   <g>
     {markerLayout(cam).map((m) =>
       m.deckung > 0 && m.y > -5 && m.y < H + 5 ? (
-        <line key={m.id} x1={0} x2={W} y1={m.y} y2={m.y} stroke="#FFFFFF" strokeOpacity={0.55 * m.deckung} strokeWidth={2} strokeDasharray="14 10" />
+        <line key={m.id} x1={0} x2={W} y1={m.y} y2={m.y} stroke={DS.muted} strokeOpacity={0.85 * m.deckung} strokeWidth={2} strokeDasharray="12 10" />
       ) : null,
     )}
   </g>
 );
 
-const LABEL_H = 88;
-const MarkerLabels: React.FC<{ cam: Kamera; bloecke: Block[] }> = ({ cam, bloecke }) => (
-  <>
-    {markerLayout(cam).map((m) => {
-      if (m.deckung <= 0) return null;
-      const kollidiert = (o: number) => bloecke.some((b) => b.deckung > 0 && o < b.unten + 10 && o + LABEL_H > b.oben);
-      let oben = m.y - 6 - LABEL_H;
-      let deckung = m.deckung;
-      if (kollidiert(oben)) {
-        oben = m.y + 6;
-        if (kollidiert(oben)) deckung *= 1 - Math.max(...bloecke.map((b) => b.deckung));
-      }
-      if (oben < TEXT_OBEN || oben + LABEL_H > TEXT_UNTEN) return null;
-      return (
-        <div key={m.id} style={{ position: "absolute", left: 32, top: oben, opacity: deckung, color: "#FFFFFF", fontSize: 40, lineHeight: "44px" }}>
-          <div style={{ fontWeight: 600, opacity: 0.85 }}>{m.kurz}</div>
-          <div style={{ fontWeight: 400, opacity: 0.7 }}>{formatKm(m.km)}</div>
+const CHIP_X = 32;
+const CHIP_W = 270;
+const CHIP_H = 92;
+// Wie stark ein Chip an Position `oben` frei ist (0 = verdeckt, 1 = frei); weich über 24 px Abstand.
+const frei = (oben: number, bloecke: Block[]) =>
+  bloecke.reduce((acc, b) => {
+    const vertikal = oben < b.unten + 8 && oben + CHIP_H > b.oben - 8;
+    if (!vertikal || b.deckung <= 0) return acc;
+    const abstand = Math.max(b.links - (CHIP_X + CHIP_W), CHIP_X - b.rechts);
+    return acc * (1 - b.deckung * (1 - clamp01(abstand / 24)));
+  }, 1);
+
+// Von oben nach unten platzieren; gesetzte Chips blockieren die folgenden.
+const MarkerLabels: React.FC<{ cam: Kamera; bloecke: Block[] }> = ({ cam, bloecke }) => {
+  const belegt = [...bloecke];
+  const chips = [...markerLayout(cam)].reverse().flatMap((m) => {
+    if (m.deckung <= 0) return [];
+    const ueber = m.y - 8 - CHIP_H;
+    const unter = m.y + 8;
+    const oben = frei(ueber, belegt) >= frei(unter, belegt) ? ueber : unter;
+    const d = m.deckung * frei(oben, belegt) * clamp01((oben - RAND) / 20) * clamp01((TEXT_UNTEN - oben - CHIP_H) / 20);
+    if (d <= 0.01) return [];
+    belegt.push({ links: CHIP_X - 30, rechts: CHIP_X + CHIP_W, oben, unten: oben + CHIP_H, deckung: d });
+    return [{ m, oben, d }];
+  });
+  return (
+    <>
+      {chips.map(({ m, oben, d }) => (
+        <div key={m.id} style={{ position: "absolute", left: CHIP_X, top: oben, opacity: d, background: "rgba(6,10,8,0.82)", boxShadow: `0 0 0 1px ${DS.border}`, borderRadius: 8, padding: "6px 14px", color: DS.foreground, lineHeight: "40px" }}>
+          <div style={{ fontFamily: inter, fontSize: 36, fontWeight: 600 }}>{m.kurz}</div>
+          <div style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>{formatKm(m.km)}</div>
         </div>
-      );
-    })}
-  </>
-);
+      ))}
+    </>
+  );
+};
 
 // ---------- Erde ----------
 const Erde: React.FC<{ cam: Kamera }> = ({ cam }) => {
@@ -245,9 +283,9 @@ const Erde: React.FC<{ cam: Kamera }> = ({ cam }) => {
 };
 const ErdeLabel: React.FC<{ cam: Kamera }> = ({ cam }) => {
   const e = erdeBild(cam);
-  if (e.r < 55 || e.x < 50) return null;
+  if (e.r < 50 || e.x < 50) return null;
   return (
-    <div style={{ position: "absolute", left: e.x - 100, width: 200, top: e.y - 24, textAlign: "center", fontSize: 40, fontWeight: 600, color: "#FFFFFF", opacity: clamp01((e.r - 55) / 10) }}>
+    <div style={{ position: "absolute", left: e.x - 100, width: 200, top: e.y - 22, textAlign: "center", fontFamily: grotesk, fontSize: 36, fontWeight: 600, color: DS.foreground, opacity: clamp01((e.r - 50) / 10) }}>
       Erde
     </div>
   );
@@ -258,29 +296,22 @@ const kostenText = (i: number) => PROJEKTE[i].kosten_anzeige ?? formatMrd(PROJEK
 const kostenKurz = (i: number) => PROJEKTE[i].kosten_anzeige?.split(" (")[0] ?? formatMrd(PROJEKTE[i].kosten_mrd_usd);
 
 const Panel: React.FC<{ style?: React.CSSProperties; children: React.ReactNode }> = ({ style, children }) => (
-  <div style={{ background: "rgba(11,20,38,0.74)", borderRadius: 28, padding: "22px 32px", color: "#FFFFFF", textAlign: "center", ...style }}>
+  <div style={{ background: "rgba(11,17,14,0.94)", boxShadow: `0 0 0 1px ${DS.border}`, borderRadius: 12, padding: "18px 28px", color: DS.foreground, textAlign: "center", ...style }}>
     {children}
   </div>
 );
 
-const Karte: React.FC<{ i: number; f: number; unten: number; deckung: number }> = ({ i, f, unten, deckung }) => {
+const Karte: React.FC<{ i: number; unten: number; deckung: number }> = ({ i, unten, deckung }) => {
   const p = PROJEKTE[i];
   const mag = p.id === "mag7";
-  const t0 = wachsEnde(SZENEN[i]) + 8;
-  const puls = mag ? 1 + 0.16 * Math.sin(Math.PI * clamp01((f - t0 - 14) / 16)) : 1;
   return (
-    <div style={{ position: "absolute", left: 40, right: 40, bottom: H - unten, opacity: deckung, transform: `translateY(${(1 - deckung) * 20}px)` }}>
-      <Panel>
-        <div style={{ fontSize: 58, fontWeight: 800, lineHeight: "66px", color: mag ? FARBE.akzent : "#FFFFFF" }}>{p.name}</div>
-        <div style={{ fontSize: 46, fontWeight: 600, lineHeight: "56px", marginTop: 6 }}>
-          {kostenText(i)} · {formatHoehe(HOEHEN_KM[i])}
+    <div style={{ position: "absolute", left: 40, right: 40, bottom: H - unten, opacity: deckung, transform: `translateY(${(1 - deckung) * 16}px)` }}>
+      <Panel style={mag ? { boxShadow: `0 0 0 2px ${DS.primary}` } : undefined}>
+        <div style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, lineHeight: "56px", color: mag ? DS.primary : DS.foreground }}>{p.name}</div>
+        <div style={{ fontFamily: inter, fontSize: 36, fontWeight: 600, lineHeight: "46px", marginTop: 4 }}>
+          {kostenText(i)} <span style={{ color: DS.muted }}>·</span> {formatHoehe(HOEHEN_KM[i])}
         </div>
-        <div style={{ marginTop: 10 }}>
-          <span style={{ display: "inline-block", fontSize: 40, fontWeight: 600, lineHeight: "48px", padding: "2px 22px", border: `3px solid ${mag ? FARBE.akzent : "rgba(255,255,255,0.8)"}`, borderRadius: 40, transform: `scale(${puls})` }}>
-            {p.laufzeit_badge}
-          </span>
-        </div>
-        <div style={{ fontSize: 40, fontWeight: 400, lineHeight: "50px", marginTop: 10, opacity: 0.85 }}>{p.kontextzeile}</div>
+        <div style={{ fontFamily: inter, fontSize: 36, fontWeight: 400, lineHeight: "44px", marginTop: 8, color: DS.muted }}>{p.kontextzeile}</div>
       </Panel>
     </div>
   );
@@ -288,8 +319,9 @@ const Karte: React.FC<{ i: number; f: number; unten: number; deckung: number }> 
 
 const Zaehler: React.FC<{ km: number; deckung: number }> = ({ km, deckung }) =>
   deckung > 0 ? (
-    <div style={{ position: "absolute", right: 40, top: 1474, opacity: deckung, color: "#FFFFFF", fontSize: 44, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-      Höhe: {formatHoehe(km)}
+    <div style={{ position: "absolute", right: 40, top: 1214, opacity: deckung, display: "flex", alignItems: "baseline", gap: 14 }}>
+      <span style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>Höhe</span>
+      <span style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, color: DS.foreground, fontVariantNumeric: "tabular-nums" }}>{formatHoehe(km)}</span>
     </div>
   ) : null;
 
@@ -312,43 +344,97 @@ const KAL_TEXTE = [
   { von: 154, bis: 190, text: `1 Mio. $ = ${formatHoehe(scheineKm(1e6))}` },
   { von: 212, bis: 246, text: `1 Mrd. $ = ${formatHoehe(scheineKm(1e9))}` },
 ];
-const KAL_TEXT_OBEN = 250;
-const KAL_TEXT_UNTEN = 370;
+const KAL_TEXT_OBEN = 90;
+const KAL_TEXT_UNTEN = 190;
 const kalDeckung = (f: number, t: { von: number; bis: number }) => fade(f, t.von, t.von + 8) * (1 - fade(f, t.bis - 8, t.bis));
 
-// ---------- Hook ----------
-const Note: React.FC = () => (
-  <svg width={600} height={256} viewBox="0 0 600 256">
-    <rect x={3} y={3} width={594} height={250} rx={10} fill={FARBE.schein} stroke={FARBE.kante} strokeWidth={6} />
-    <rect x={24} y={24} width={552} height={208} rx={6} fill="none" stroke={FARBE.kante} strokeWidth={3} />
-    <ellipse cx={300} cy={128} rx={62} ry={80} fill="none" stroke={FARBE.kante} strokeWidth={4} />
-    <text x={58} y={88} fontSize={52} fontWeight={800} fill={FARBE.kante} fontFamily={fontFamily}>1</text>
-    <text x={514} y={210} fontSize={52} fontWeight={800} fill={FARBE.kante} fontFamily={fontFamily}>1</text>
-  </svg>
-);
+// ---------- Hook: Scheine fallen und türmen sich auf ----------
+const STAPEL_X0 = 202; // vordere linke Ecke des Hook-Stapels
+const STAPEL_BASIS = 1150;
+const PX_PRO_SCHEIN = 0.42; // 600 px ≙ 156 mm
+const ABWUERFE = (() => {
+  const n = 24;
+  const r = zufall(42);
+  return Array.from({ length: n }, (_, j) => ({
+    landung: Math.round(j === 0 ? 20 : 26 + 54 * Math.pow(j / (n - 1), 0.7)),
+    anzahl: Math.round(Math.pow(1000, j / (n - 1))),
+    dx: j === 0 ? 0 : (r() - 0.5) * 36,
+    dreh: (r() - 0.5) * 6,
+  }));
+})();
+const nf = new Intl.NumberFormat("de-DE");
 
 const Hook: React.FC<{ f: number }> = ({ f }) => {
-  const fall = spring({ frame: f, fps: FPS, config: { damping: 14, stiffness: 90 } });
-  const deckung = 1 - fade(f, 84, 96);
-  if (deckung <= 0) return null;
-  const textAus = 1 - fade(f, 78, 88);
+  const aus = fade(f, 84, 96);
+  if (aus >= 1) return null;
+
+  // Stapelhöhe: wächst nach jeder Landung weich auf die neue Anzahl
+  let anzahl = 0;
+  ABWUERFE.forEach((a, j) => {
+    if (f < a.landung) return;
+    const vorher = j === 0 ? 0 : ABWUERFE[j - 1].anzahl;
+    anzahl = vorher + (a.anzahl - vorher) * clamp01((f - a.landung) / 4);
+  });
+  const hPx = anzahl * PX_PRO_SCHEIN;
+  const yOben = STAPEL_BASIS - hPx;
+  const gelandet = ABWUERFE.filter((a) => f >= a.landung);
+  const oberster = gelandet[gelandet.length - 1];
+
+  // Papierkanten: dünne Streifen mit leichtem Versatz, damit der Stapel unordentlich wirkt
+  const streifen: { y: number; dx: number; ton: number }[] = [];
+  const r = zufall(9);
+  for (let y = STAPEL_BASIS; y > yOben + 0.5; y -= 3) streifen.push({ y, dx: (r() - 0.5) * 7, ton: r() });
+
   return (
-    <AbsoluteFill style={{ background: "#000000", opacity: deckung }}>
-      <div style={{ position: "absolute", left: 240, top: interpolate(fall, [0, 1], [-320, 470]), transform: `rotate(${interpolate(fall, [0, 1], [-18, -4])}deg)` }}>
-        <Note />
+    <AbsoluteFill style={{ background: DS.background, opacity: 1 - aus, transform: `scale(${1 + aus * 0.6})`, transformOrigin: `${STAPEL_X0 + SCHEIN_W / 2}px ${STAPEL_BASIS - 120}px` }}>
+      <div style={{ position: "absolute", left: 60, right: 60, top: RAND + 10, textAlign: "center", color: DS.foreground, opacity: fade(f, 4, 14), fontFamily: grotesk, fontSize: 56, fontWeight: 600, lineHeight: "66px" }}>
+        <span style={{ color: DS.primary }}>780 Mrd. $</span> – so viel investieren die Mag7 2026 in KI.
       </div>
-      <div style={{ position: "absolute", left: 60, right: 60, top: 860, textAlign: "center", color: "#FFFFFF", opacity: fade(f, 22, 32) * textAus, fontSize: 60, fontWeight: 800, lineHeight: "72px" }}>
-        780 Mrd. $ – so viel investieren die Mag7 2026, größtenteils in KI.
-      </div>
-      <div style={{ position: "absolute", left: 80, right: 80, top: 1160, textAlign: "center", color: "#FFFFFF", opacity: fade(f, 46, 56) * textAus, fontSize: 50, fontWeight: 600, lineHeight: "62px" }}>
+      <div style={{ position: "absolute", left: 80, right: 80, top: 300, textAlign: "center", color: DS.muted, opacity: fade(f, 40, 50), fontFamily: inter, fontSize: 40, lineHeight: "52px" }}>
         Wie hoch ist das als Stapel aus 1‑Dollar‑Scheinen?
+      </div>
+      <svg width={W} height={H} style={{ position: "absolute" }}>
+        {hPx > 0 ? (
+          <g>
+            {/* Seitenfläche rechts */}
+            <polygon
+              points={`${STAPEL_X0 + SCHEIN_W},${yOben} ${STAPEL_X0 + SCHEIN_W + TIEFE_X},${yOben + TIEFE_Y} ${STAPEL_X0 + SCHEIN_W + TIEFE_X},${STAPEL_BASIS + TIEFE_Y} ${STAPEL_X0 + SCHEIN_W},${STAPEL_BASIS}`}
+              fill="#A9B5A2"
+            />
+            {/* Vorderkante aus Papierstreifen */}
+            {streifen.map((s, i) => (
+              <rect key={i} x={STAPEL_X0 + s.dx} y={Math.max(s.y - 3, yOben)} width={SCHEIN_W} height={Math.min(3, s.y - yOben)} fill={mix("#C3CDB9", "#D6DECC", s.ton)} />
+            ))}
+            {streifen.map((s, i) => (i % 2 === 0 ? <line key={`l${i}`} x1={STAPEL_X0 + s.dx} x2={STAPEL_X0 + s.dx + SCHEIN_W} y1={s.y} y2={s.y} stroke="#8D9B87" strokeWidth={0.8} /> : null))}
+          </g>
+        ) : null}
+        {oberster ? <ScheinOben id="oben" fontFamily={grotesk} x0={STAPEL_X0 + oberster.dx * 0.3} y0={yOben} drehung={oberster.dreh * 0.3} /> : null}
+        {/* Scheine im Flug */}
+        {ABWUERFE.map((a, j) => {
+          const dauer = j === 0 ? 20 : 7;
+          const t = (f - (a.landung - dauer)) / dauer;
+          if (t < 0 || t >= 1) return null;
+          const yZiel = STAPEL_BASIS - (j === 0 ? 0 : ABWUERFE[j - 1].anzahl * PX_PRO_SCHEIN);
+          const yStart = j === 0 ? 540 : 580;
+          const y = yStart + (yZiel - yStart) * t * t;
+          return (
+            <ScheinOben key={j} id={`flug${j}`} fontFamily={grotesk} x0={STAPEL_X0 + a.dx} y0={y} drehung={a.dreh * (1 + 1.5 * (1 - t))} deckung={j === 0 ? 1 : clamp01(t * 4)} />
+          );
+        })}
+      </svg>
+      <div style={{ position: "absolute", left: 0, right: 0, top: STAPEL_BASIS + 30, textAlign: "center", fontFamily: mono, fontSize: 36, color: DS.muted, opacity: fade(f, 22, 30) }}>
+        {nf.format(Math.round(anzahl))} $
       </div>
     </AbsoluteFill>
   );
 };
 
 // ---------- Finale ----------
-const LABEL_ZEILE = 94;
+const LABEL_OBEN = 64;
+const LABEL_ZEILE = 84;
+const LABEL_H = 80;
+const labelDeckung = (f: number, zeile: number) => fade(f, 1462 + zeile * 4, 1474 + zeile * 4);
+
 const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }) => {
   const n = rects.length;
   return (
@@ -356,12 +442,12 @@ const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }
       <svg width={W} height={H} style={{ position: "absolute" }}>
         {rects.map((r, i) => {
           const zeile = n - 1 - i;
-          const d = fade(f, 1462 + zeile * 4, 1474 + zeile * 4);
-          const farbe = PROJEKTE[i].id === "mag7" ? FARBE.akzent : "#FFFFFF";
-          const y0 = 204 + zeile * LABEL_ZEILE + LABEL_H + 6;
+          const d = labelDeckung(f, zeile);
+          const farbe = PROJEKTE[i].id === "mag7" ? DS.primary : DS.foreground;
+          const y0 = LABEL_OBEN + zeile * LABEL_ZEILE + LABEL_H + 6;
           return d > 0 ? (
             <g key={i} opacity={d}>
-              <line x1={r.x} x2={r.x} y1={y0} y2={r.spitze - 8} stroke={farbe} strokeWidth={2} strokeOpacity={0.85} />
+              <line x1={r.x} x2={r.x} y1={y0} y2={r.spitze - 8} stroke={farbe} strokeWidth={2} strokeOpacity={0.7} />
               <circle cx={r.x} cy={r.spitze - 8} r={4} fill={farbe} />
             </g>
           ) : null;
@@ -369,12 +455,12 @@ const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }
       </svg>
       {rects.map((r, i) => {
         const zeile = n - 1 - i;
-        const d = fade(f, 1462 + zeile * 4, 1474 + zeile * 4);
-        const farbe = PROJEKTE[i].id === "mag7" ? FARBE.akzent : "#FFFFFF";
+        const d = labelDeckung(f, zeile);
+        const mag = PROJEKTE[i].id === "mag7";
         return d > 0 ? (
-          <div key={i} style={{ position: "absolute", right: W - (r.x + 30), top: 204 + zeile * LABEL_ZEILE, opacity: d, textAlign: "right", color: farbe, fontSize: 40, lineHeight: "44px", whiteSpace: "nowrap" }}>
-            <div style={{ fontWeight: 700 }}>{PROJEKTE[i].name}</div>
-            <div style={{ fontWeight: 400 }}>{kostenKurz(i)}</div>
+          <div key={i} style={{ position: "absolute", right: W - (r.x + 30), top: LABEL_OBEN + zeile * LABEL_ZEILE, opacity: d, textAlign: "right", fontSize: 36, lineHeight: "40px", whiteSpace: "nowrap" }}>
+            <div style={{ fontFamily: grotesk, fontWeight: 600, color: mag ? DS.primary : DS.foreground }}>{PROJEKTE[i].name}</div>
+            <div style={{ fontFamily: inter, color: mag ? DS.primary : DS.muted }}>{kostenKurz(i)}</div>
           </div>
         ) : null;
       })}
@@ -387,20 +473,21 @@ const burjAnteil = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).
 );
 
 const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => {
-  const ring = fade(f, 1528, 1546);
-  const umfang = 2 * Math.PI * 40;
+  const ring = fade(f, 1544, 1562);
+  const umfang = 2 * Math.PI * 38;
+  const zeile: React.CSSProperties = { position: "absolute", left: 40, right: 40, top: 1228, textAlign: "center", color: DS.foreground, fontSize: 40, lineHeight: "48px" };
   return (
     <>
       <svg width={W} height={H} style={{ position: "absolute" }}>
         {ring > 0 ? (
-          <circle cx={burj.x} cy={burj.spitze} r={40} fill="none" stroke="#FFFFFF" strokeWidth={4} strokeDasharray={umfang} strokeDashoffset={umfang * (1 - ring)} transform={`rotate(-90 ${burj.x} ${burj.spitze})`} />
+          <circle cx={burj.x} cy={burj.spitze} r={38} fill="none" stroke={DS.foreground} strokeWidth={4} strokeDasharray={umfang} strokeDashoffset={umfang * (1 - ring)} transform={`rotate(-90 ${burj.x} ${burj.spitze})`} />
         ) : null}
       </svg>
-      <div style={{ position: "absolute", left: 40, right: 40, top: 1462, textAlign: "center", color: "#FFFFFF", fontSize: 42, fontWeight: 700, opacity: fade(f, 1486, 1498) }}>
+      <div style={{ ...zeile, fontFamily: grotesk, fontWeight: 600, opacity: fade(f, 1486, 1498) * (1 - fade(f, 1534, 1542)) }}>
         Alle Stapel im echten Größenverhältnis
       </div>
-      <div style={{ position: "absolute", left: 40, right: 40, top: 1522, textAlign: "center", color: "#FFFFFF", fontSize: 42, fontWeight: 400, opacity: fade(f, 1538, 1550) }}>
-        Burj Khalifa: {burjAnteil} % des KI-Stapels
+      <div style={{ ...zeile, fontFamily: inter, opacity: fade(f, 1546, 1558) }}>
+        Burj Khalifa: <b style={{ fontFamily: grotesk, fontWeight: 600 }}>{burjAnteil} %</b> des KI-Stapels
       </div>
     </>
   );
@@ -410,11 +497,11 @@ const Endcard: React.FC<{ f: number }> = ({ f }) => {
   const d = fade(f, 1650, 1666);
   if (d <= 0) return null;
   return (
-    <AbsoluteFill style={{ background: `rgba(5,7,13,${0.9 * d})` }}>
-      <div style={{ position: "absolute", left: 70, right: 70, top: 640, textAlign: "center", color: "#FFFFFF", fontSize: 68, fontWeight: 800, lineHeight: "84px", opacity: fade(f, 1660, 1676) }}>
-        Mehr als Apollo, Manhattan-Projekt, Marshallplan und ISS zusammen – in einem Jahr.
+    <AbsoluteFill style={{ background: `rgba(6,10,8,${0.96 * d})` }}>
+      <div style={{ position: "absolute", left: 70, right: 70, top: 300, textAlign: "center", color: DS.foreground, fontFamily: grotesk, fontSize: 64, fontWeight: 600, lineHeight: "78px", opacity: fade(f, 1660, 1676) }}>
+        Mehr als Apollo, Manhattan-Projekt, Marshallplan und ISS zusammen – <span style={{ color: DS.primary }}>in einem Jahr.</span>
       </div>
-      <div style={{ position: "absolute", left: 60, right: 60, bottom: H - TEXT_UNTEN, textAlign: "center", color: "#FFFFFF", fontSize: 40, fontWeight: 400, lineHeight: "52px", opacity: 0.7 * fade(f, 1680, 1692) }}>
+      <div style={{ position: "absolute", left: 60, right: 60, bottom: RAND, textAlign: "center", color: DS.muted, fontFamily: inter, fontSize: 36, lineHeight: "46px", opacity: fade(f, 1680, 1692) }}>
         Höhe maßstabsgetreu, Breite nicht. Projektkosten inflationsbereinigt (USD); Stuttgart 21 und Burj Khalifa nominal. Mag7: Capex-Guidance Q2/2026 inkl. Nicht-KI-Anteilen. Scheindicke 0,1092 mm.
       </div>
     </AbsoluteFill>
@@ -441,23 +528,29 @@ export const DollarStapel: React.FC = () => {
   const rects = PROJEKTE.map((_, i) => stapelRect(cam, stapelXKm(i), stapelHoeheKm(f, i)));
   const kalRect = stapelRect(cam, KAL_X_KM, scheineKm(kalScheine(f)));
   const [, bodenY] = zuBild(cam, 0, 0);
-  const iconsAus = 1 - fade(f, FINALE_START, FINALE_START + 20);
 
-  // Karte der aktiven bzw. gerade verlassenen Szene
+  // Nur das Icon der aktuellen Szene steht auf der Spitze; beim nächsten Schwenk blendet es aus.
+  const iconDeckung = (i: number) => {
+    const ende = i + 1 < SZENEN.length ? SZENEN[i + 1].start : FINALE_START;
+    return fade(f, wachsEnde(SZENEN[i]), wachsEnde(SZENEN[i]) + 3) * (1 - fade(f, ende, ende + 8));
+  };
+
   const karten = SZENEN.map((s, i) => {
     const d = fade(f, wachsEnde(s) + 8, wachsEnde(s) + 18) * (1 - fade(f, s.ende, s.ende + 6));
-    const iconOben = rects[i].spitze - 4 - 120;
-    return { i, d, unten: iconOben - 18 };
+    return { i, d, unten: rects[i].spitze - 4 - 120 - 18 };
   }).filter((k) => k.d > 0);
 
+  const e = erdeBild(cam);
   const bloecke: Block[] = [
-    ...karten.map((k) => ({ oben: TEXT_OBEN, unten: k.unten, deckung: k.d })),
-    ...KAL_TEXTE.map((t) => ({ oben: KAL_TEXT_OBEN, unten: KAL_TEXT_UNTEN, deckung: kalDeckung(f, t) })),
+    ...karten.map((k) => ({ links: 0, rechts: W, oben: 0, unten: k.unten, deckung: k.d })),
+    ...KAL_TEXTE.map((t) => ({ links: 0, rechts: W, oben: KAL_TEXT_OBEN, unten: KAL_TEXT_UNTEN, deckung: kalDeckung(f, t) })),
+    ...rects.map((r, i) => ({ links: r.x - 70, rechts: r.x + 70, oben: r.spitze - 130, unten: r.basis, deckung: r.hoehePx > 0 ? Math.max(0.999 * clamp01(r.hoehePx), iconDeckung(i)) : 0 })),
+    { links: e.x - e.r, rechts: e.x + e.r, oben: e.y - e.r, unten: e.y + e.r, deckung: e.r > 2 ? 1 : 0 },
   ];
   const z = zaehlerStand(f);
 
   return (
-    <AbsoluteFill style={{ fontFamily, backgroundColor: FARBE.all }}>
+    <AbsoluteFill style={{ fontFamily: inter, backgroundColor: DS.background }}>
       <Html5Audio src={staticFile("musik.wav")} />
       <Himmel cam={cam} />
       <Sterne cam={cam} />
@@ -468,7 +561,12 @@ export const DollarStapel: React.FC = () => {
           </filter>
         </defs>
         {/* Boden ohne Blur, sonst verschmiert die Kante bei Schwenks */}
-        {bodenY < H ? <rect x={0} y={Math.max(bodenY, 0)} width={W} height={H - Math.max(bodenY, 0)} fill={FARBE.grund} /> : null}
+        {bodenY < H ? (
+          <g>
+            <rect x={0} y={Math.max(bodenY, 0)} width={W} height={H - Math.max(bodenY, 0)} fill={DS.card} />
+            <line x1={0} x2={W} y1={bodenY} y2={bodenY} stroke={DS.borderStrong} strokeWidth={2} />
+          </g>
+        ) : null}
         <g filter={blur ? "url(#mb)" : undefined}>
           <Wolken cam={cam} vorne={false} />
           <MarkerLinien cam={cam} />
@@ -476,15 +574,16 @@ export const DollarStapel: React.FC = () => {
           {f < 260 ? <Silhouette cam={cam} xKm={HOCHHAUS_X_KM} profil={HOCHHAUS_PROFIL} /> : null}
           <Silhouette cam={cam} xKm={BURJ_TURM_X_KM} profil={BURJ_PROFIL} />
           {f < 260 ? <Stapel r={kalRect} mag={false} scheinPx={scheinPx} /> : null}
+          {f < 130 ? <FallenderSchein f={f} r={kalRect} scheinPx={scheinPx} /> : null}
           {rects.map((r, i) => (
             <Stapel key={i} r={r} mag={PROJEKTE[i].id === "mag7"} scheinPx={scheinPx} />
           ))}
           {rects.map((r, i) => {
-            const landung = wachsEnde(SZENEN[i]);
-            if (f < landung || iconsAus <= 0) return null;
-            const s = iconDrop(f, landung);
+            const d = iconDeckung(i);
+            if (d <= 0) return null;
+            const s = iconDrop(f, wachsEnde(SZENEN[i]));
             return (
-              <g key={i} transform={`translate(${r.x - 60} ${r.spitze - 124 - (1 - s) * 90})`} opacity={fade(f, landung, landung + 3) * iconsAus}>
+              <g key={i} transform={`translate(${r.x - 60} ${r.spitze - 124 - (1 - s) * 90})`} opacity={d}>
                 <ProjektIcon id={PROJEKTE[i].id} />
               </g>
             );
@@ -498,12 +597,12 @@ export const DollarStapel: React.FC = () => {
         const d = kalDeckung(f, t);
         return d > 0 ? (
           <div key={t.text} style={{ position: "absolute", left: 0, right: 0, top: KAL_TEXT_OBEN, display: "flex", justifyContent: "center", opacity: d }}>
-            <Panel style={{ fontSize: 64, fontWeight: 800, lineHeight: "76px" }}>{t.text}</Panel>
+            <Panel style={{ fontFamily: grotesk, fontSize: 60, fontWeight: 600, lineHeight: "64px" }}>{t.text}</Panel>
           </div>
         ) : null;
       })}
       {karten.map((k) => (
-        <Karte key={k.i} i={k.i} f={f} unten={k.unten} deckung={k.d} />
+        <Karte key={k.i} i={k.i} unten={k.unten} deckung={k.d} />
       ))}
       <Zaehler km={z.km} deckung={z.deckung} />
       {f >= 1450 ? <FinaleLabels f={f} rects={rects} /> : null}

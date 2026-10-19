@@ -4,16 +4,16 @@ import { ERDE_DURCHMESSER_KM, HOEHENMARKER, PROJEKTE } from "./data.ts";
 import { hoeheKm, scheineKm } from "./scale.ts";
 
 export const W = 1080;
-export const H = 1920;
+export const H = 1350; // 4:5 für den LinkedIn-Feed
 export const FPS = 30;
 export const DAUER = 1800;
 
 export const STAPEL_BREITE_PX = 60; // feste Bildschirmbreite, unabhängig vom Zoom
-export const BASIS_Y = 1440; // Grundlinie auf dem Bildschirm, solange sie im Bild ist
-export const SPITZE_Y = 700; // Ruhelage der Stapelspitze
+export const BASIS_Y = 1180; // Grundlinie auf dem Bildschirm, solange sie im Bild ist
+export const SPITZE_Y = 450; // Ruhelage der Stapelspitze
 
 const FINALE_ABSTAND_PX = 90;
-const FINALE_MAX_PX = 900;
+const FINALE_MAX_PX = 740;
 const FINALE_ERSTER_X = 330;
 
 export const HOEHEN_KM = PROJEKTE.map((p) => hoeheKm(p.kosten_mrd_usd));
@@ -62,15 +62,11 @@ const fahrt = (a: Kamera, b: Kamera, u: number, schwenk: boolean): Kamera => {
 };
 
 // ---------- Kalibrierung 90–240 ----------
-const KAL_RAHMEN: Rahmen = { X: 640, kS: K_MAKRO, L: 740 };
+const KAL_RAHMEN: Rahmen = { X: 640, kS: K_MAKRO, L: 730 };
+export const KAL_LANDUNGEN = [104, 110, 116, 122];
 export const kalScheine = (f: number): number => {
   if (f < 100) return 1;
-  if (f < 128) {
-    const u = (f - 100) / 6;
-    const s = Math.floor(u);
-    if (s >= 3) return 4;
-    return 1 + s + 1 - Math.pow(1 - clamp01((u - s) * 2), 3);
-  }
+  if (f < 128) return 1 + KAL_LANDUNGEN.filter((l) => f >= l).length;
   if (f < 160) return logLerp(4, 1e6, ease((f - 128) / 32));
   if (f < 178) return 1e6;
   if (f < 218) return logLerp(1e6, 1e9, ease((f - 178) / 40));
@@ -97,7 +93,7 @@ const szene = (
   X: number,
   kS: number,
   wachsen: number,
-  L = 740,
+  L = 730,
 ): Szene => ({ id, start, ende, X, kS, L, schwenk: 20, wachsen });
 
 export const SZENEN: Szene[] = [
@@ -107,10 +103,10 @@ export const SZENEN: Szene[] = [
   szene("iss", 600, 720, 540, 0.2, 50),
   szene("marshall", 720, 840, 540, 0.2, 50),
   // Apollo und Interstate etwas weiter weg, damit die Erde am Bildrand steht.
-  szene("apollo", 840, 990, 820, 1, 66, HOEHEN_KM[5] / 75),
-  szene("interstate", 990, 1140, 820, 2, 66),
+  szene("apollo", 840, 990, 860, 1, 66, HOEHEN_KM[5] / 95),
+  szene("interstate", 990, 1140, 900, 2, 66),
   // Mag7: Kamera folgt der Spitze, die Basis verlässt das Bild.
-  { ...szene("mag7", 1140, 1380, 600, 2, 160, 2840), schwenk: 24 },
+  { ...szene("mag7", 1140, 1380, 600, 2, 160, 2400), schwenk: 24 },
 ];
 
 export const wachsStart = (s: Szene) => s.start + s.schwenk;

@@ -1,10 +1,15 @@
 // Erzeugt public/musik.wav: steigende, weltraumartige Elektronik, 60 s, prozedural (keine Samples).
 import { writeFileSync, mkdirSync } from "node:fs";
-import { FINALE_START, HOOK_ENDE, HOOK_LANDUNGEN, KAL_LANDUNGEN, SZENEN, wachsEnde, wachsStart, ZOOM_ENDE } from "../src/world.ts";
+import { CRAWL_START, DAUER as FRAMES, FINALE_START, HEADLINE_ENDE, N as ANZAHL, SPRUNG, SZENEN, ZOOM_ENDE } from "../src/world.ts";
 
 const SR = 44100;
-const DAUER = 60;
-const N = SR * DAUER;
+const T = (frame) => frame / 30; // frames → seconds
+const DAUER = FRAMES / 30;
+const T_MAG_ENDE = T(SZENEN[SZENEN.length - 1].wachsEnde);
+const T_FINALE = T(FINALE_START);
+const T_CRAWL = T(CRAWL_START);
+const T_SPRUNG = T(SPRUNG);
+const N = Math.round(SR * DAUER);
 const L = new Float32Array(N);
 const R = new Float32Array(N);
 
@@ -26,10 +31,13 @@ const AKKORDE = [
   { pad: [45, 48, 53, 57], bass: 41, arp: [60, 65, 69, 72] },
   { pad: [43, 48, 52, 55], bass: 36, arp: [60, 64, 67, 72] },
 ];
-const akkordBei = (t) => (t >= 55 ? AKKORDE[0] : AKKORDE[Math.floor(t / (BEAT * 8)) % 4]);
+const akkordBei = (t) => (t >= T_SPRUNG ? AKKORDE[0] : AKKORDE[Math.floor(t / (BEAT * 8)) % 4]);
 
-// Gesamtintensität: steigt bis zum Mag7-Höhepunkt (~46 s), Endcard ruhig.
-const intens = (t) => 0.25 + 0.35 * smooth(3, 38, t) + 0.4 * smooth(38, 46, t) - 0.55 * smooth(54.5, 57, t);
+// Intensity: builds to the Mag7 peak, holds through the finale, calmer crawl rising into the jump, quiet ending.
+const intens = (t) =>
+  0.25 + 0.3 * smooth(2, T_MAG_ENDE - 5, t) + 0.4 * smooth(T_MAG_ENDE - 6, T_MAG_ENDE, t)
+  - 0.4 * smooth(T_CRAWL - 1, T_CRAWL + 1, t) + 0.35 * smooth(T_CRAWL + 3, T_SPRUNG, t)
+  - 0.6 * smooth(T_SPRUNG + 0.3, T_SPRUNG + 2.5, t);
 
 // State-variable-Tiefpass
 const tiefpass = () => {
@@ -62,7 +70,7 @@ const tiefpass = () => {
       r += v * s.pan;
     }
     const fc = 250 + 3200 * Math.pow(intens(t), 2) + 300 * Math.sin(t * 0.7);
-    const amp = 0.05 * smooth(0, 2.5, t) * (0.6 + 0.4 * intens(t)) * (1 - smooth(58, 60, t));
+    const amp = 0.05 * smooth(0, 1.5, t) * (0.6 + 0.4 * intens(t)) * (1 - smooth(DAUER - 2, DAUER, t));
     L[i] += fl(l, fc) * amp;
     R[i] += fr(r, fc) * amp;
   }
@@ -73,11 +81,11 @@ const tiefpass = () => {
   let ph = 0;
   for (let i = 0; i < N; i++) {
     const t = i / SR;
-    if (t < 3) continue;
+    if (t < 2) continue;
     ph += mtof(akkordBei(t).bass) / SR;
     const achtel = (t / (BEAT / 2)) % 1;
-    const puls = t < 8 ? 0.6 : Math.exp(-achtel * 3.5);
-    const amp = 0.16 * smooth(3, 8, t) * puls * (0.5 + 0.5 * intens(t)) * (1 - smooth(55, 58, t));
+    const puls = t < T(HEADLINE_ENDE) || (t > T_CRAWL && t < T_SPRUNG) ? 0.6 : Math.exp(-achtel * 3.5);
+    const amp = 0.16 * smooth(2, 5, t) * puls * (0.5 + 0.5 * intens(t)) * (1 - smooth(T_SPRUNG + 1, DAUER - 0.5, t));
     const v = Math.sin(2 * Math.PI * ph) + 0.25 * Math.sin(4 * Math.PI * ph);
     L[i] += v * amp;
     R[i] += v * amp;
@@ -90,14 +98,14 @@ const tiefpass = () => {
   const SECHZEHNTEL = BEAT / 4;
   const muster = [0, 1, 2, 3, 2, 1, 2, 3];
   const f = tiefpass();
-  for (let s = Math.floor(8 / SECHZEHNTEL); s * SECHZEHNTEL < 56; s++) {
+  for (let s = Math.floor(T(HEADLINE_ENDE) / SECHZEHNTEL); s * SECHZEHNTEL < T_CRAWL; s++) {
     const t0 = s * SECHZEHNTEL;
     const a = akkordBei(t0);
-    const oktave = t0 > 38 ? 12 : 0;
+    const oktave = t0 > T_MAG_ENDE - 6 ? 12 : 0;
     const freq = mtof(a.arp[muster[s % 8]] + oktave);
     const i0 = Math.floor(t0 * SR);
     const len = Math.floor(0.22 * SR);
-    const amp = 0.05 * smooth(8, 16, t0) * (0.4 + 0.6 * intens(t0));
+    const amp = 0.05 * smooth(T(HEADLINE_ENDE), T(HEADLINE_ENDE) + 4, t0) * (0.4 + 0.6 * intens(t0)) * (1 - smooth(T_CRAWL - 1.5, T_CRAWL, t0));
     let ph = 0;
     for (let j = 0; j < len && i0 + j < N; j++) {
       ph += freq / SR;
@@ -118,11 +126,11 @@ const tiefpass = () => {
   }
 }
 
-// ---------- Kick, 24–54 s ----------
-for (let b = Math.ceil(24 / BEAT); b * BEAT < 54.5; b++) {
+// ---------- Kick from the Burj landing to the end of the finale ----------
+for (let b = Math.ceil(T(SZENEN[0].wachsEnde) / BEAT); b * BEAT < T_CRAWL - 0.2; b++) {
   const t0 = b * BEAT;
   const i0 = Math.floor(t0 * SR);
-  const amp = 0.28 * smooth(24, 30, t0) * (0.6 + 0.4 * intens(t0));
+  const amp = 0.28 * smooth(T(SZENEN[0].wachsEnde), T(SZENEN[0].wachsEnde) + 4, t0) * (0.6 + 0.4 * intens(t0));
   let ph = 0;
   for (let j = 0; j < 0.35 * SR && i0 + j < N; j++) {
     const tt = j / SR;
@@ -138,7 +146,7 @@ for (let b = Math.ceil(24 / BEAT); b * BEAT < 54.5; b++) {
   const fl = tiefpass(), fr = tiefpass();
   for (let i = 0; i < N; i++) {
     const t = i / SR;
-    const steig = smooth(30, 46, t) * (1 - smooth(46, 47.5, t)) + 0.25 * smooth(4, 7.8, t) * (1 - smooth(7.8, 8.4, t));
+    const steig = smooth(T_MAG_ENDE - 8, T_MAG_ENDE, t) * (1 - smooth(T_MAG_ENDE, T_MAG_ENDE + 1.5, t)) + 0.8 * smooth(T_SPRUNG - 3, T_SPRUNG, t) * (1 - smooth(T_SPRUNG, T_SPRUNG + 1.2, t));
     if (steig <= 0) continue;
     const fc = 300 + 7000 * steig * steig;
     L[i] += fl(rnd() * 2 - 1, fc, 0.3) * 0.08 * steig;
@@ -149,7 +157,7 @@ for (let b = Math.ceil(24 / BEAT); b * BEAT < 54.5; b++) {
 // ---------- Glöckchen („Sterne“) ----------
 {
   const toene = [74, 77, 81, 86, 89, 93];
-  for (let t0 = 4; t0 < 59; t0 += 0.5 + rnd() * 1.5) {
+  for (let t0 = 2.5; t0 < DAUER - 1.5; t0 += 0.5 + rnd() * 1.5) {
     const freq = mtof(toene[Math.floor(rnd() * toene.length)]);
     const pan = rnd();
     const i0 = Math.floor(t0 * SR);
@@ -208,30 +216,25 @@ for (let b = Math.ceil(24 / BEAT); b * BEAT < 54.5; b++) {
   };
   const klick = (t0, amp, freq = 2400) => add(t0, 0.05, (t) => Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * 90) * amp);
 
-  // Hook: Scheine landen, dann Sog in die Papierkante
-  HOOK_LANDUNGEN.forEach((l, j) => papier(sek(l), j === 0 ? 0.35 : 0.22 - j * 0.004));
-  whoosh(sek(HOOK_ENDE - 12), 0.55, 0.22, true);
-  // Kalibrierung
-  KAL_LANDUNGEN.forEach((l) => papier(sek(l), 0.18));
-  whoosh(sek(143), 32 / FPSV, 0.12, true);
-  whoosh(sek(193), 40 / FPSV, 0.14, true);
-  // Projekt-Szenen: Schwenk, Aufprall des Icons, Karte
+  // Intro: "AI" lands
+  aufprall(sek(4), 0.45, 1318);
+  // Burj explainer card
+  klick(sek(HEADLINE_ENDE + 4), 0.08);
+  // Each stack: icon lands, card appears (no whoosh while stacks rise)
   SZENEN.forEach((s) => {
     const mag = s.id === "mag7";
-    whoosh(sek(s.start), s.schwenk / FPSV + 0.15, 0.24);
-    if (mag) whoosh(sek(wachsStart(s)), (wachsEnde(s) - wachsStart(s)) / FPSV, 0.1, true);
-    aufprall(sek(wachsEnde(s) + 2), mag ? 0.55 : 0.32, mag ? 1760 : 1568);
-    klick(sek(wachsEnde(s) + 6), 0.08);
+    aufprall(sek(s.wachsEnde + 2), mag ? 0.55 : 0.32, mag ? 1760 : 1568);
+    klick(sek(s.wachsEnde + 6), 0.08);
   });
-  // Finale: Zug zurück, Ankunft, Label-Ticks, Ring
-  whoosh(sek(FINALE_START), (ZOOM_ENDE - FINALE_START) / FPSV, 0.2, true);
-  aufprall(sek(ZOOM_ENDE), 0.5, 1175);
-  for (let z = 0; z < SZENEN.length; z++) klick(sek(1458 + z * 4 + 14), 0.06, 2000 + z * 180);
-  aufprall(sek(1546), 0.22, 2093);
-  // Endcard: Blöcke fallen, Mag7-Säule wächst
-  [0, 1, 2, 3].forEach((i) => aufprall(sek(1650 + 22 + i * 8 + 6), 0.22, 1046 + i * 130));
-  whoosh(sek(1650 + 58), 26 / FPSV, 0.14, true);
-  aufprall(sek(1650 + 84), 0.4, 1760);
+  // Finale: pull back, arrival, label ticks, ring
+  whoosh(sek(FINALE_START), (ZOOM_ENDE - FINALE_START) / FPSV, 0.16, true);
+  aufprall(sek(ZOOM_ENDE), 0.45, 1175);
+  for (let z = 0; z < ANZAHL; z++) klick(sek(ZOOM_ENDE - 12 + z * 4 + 14), 0.06, 2000 + z * 180);
+  aufprall(sek(ZOOM_ENDE + 58), 0.22, 2093);
+  // Light-speed jump and final line
+  whoosh(sek(SPRUNG - 24), 1.3, 0.3, true);
+  aufprall(sek(SPRUNG + 4), 0.7, 880);
+  aufprall(sek(SPRUNG + 12), 0.25, 1760);
 }
 
 // ---------- Normalisieren, sanft begrenzen, WAV schreiben ----------
@@ -244,7 +247,7 @@ buf.write("fmt ", 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.
 buf.writeUInt32LE(SR, 24); buf.writeUInt32LE(SR * 4, 28); buf.writeUInt16LE(4, 32); buf.writeUInt16LE(16, 34);
 buf.write("data", 36); buf.writeUInt32LE(N * 4, 40);
 for (let i = 0; i < N; i++) {
-  const fadeOut = 1 - smooth(DAUER - 1.5, DAUER, i / SR);
+  const fadeOut = 1 - smooth(DAUER - 1.2, DAUER, i / SR);
   buf.writeInt16LE(Math.round(Math.tanh(L[i] * gain * 1.1) * fadeOut * 32000), 44 + i * 4);
   buf.writeInt16LE(Math.round(Math.tanh(R[i] * gain * 1.1) * fadeOut * 32000), 46 + i * 4);
 }

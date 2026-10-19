@@ -1,193 +1,131 @@
-// Eine Welt, eine Kamera. Weltkoordinaten in km: x horizontal, Höhe über der Grundlinie.
-// Alles hier ist rein (ohne React/Remotion), damit der Test denselben Code prüft, der rendert.
-import { ERDE_DURCHMESSER_KM, HOEHENMARKER, PROJEKTE } from "./data.ts";
-import { hoeheKm, scheineKm } from "./scale.ts";
+// Timeline, camera and layout. Pure (no React/Remotion), so the test checks the same code that renders.
+// Heights are always to scale (one km-per-pixel value per frame for every stack and Earth);
+// horizontal positions are screen layout only (width not to scale).
+import { ERDE_DURCHMESSER_KM, PROJEKTE } from "./data.ts";
+import { hoeheKm } from "./scale.ts";
 
 export const W = 1080;
-export const H = 1350; // 4:5 für den LinkedIn-Feed
+export const H = 1350; // 4:5 for the LinkedIn feed
 export const FPS = 30;
-export const DAUER = 1800;
 
-export const STAPEL_BREITE_PX = 60; // feste Bildschirmbreite, unabhängig vom Zoom
-export const BASIS_Y = 1180; // Grundlinie auf dem Bildschirm, solange sie im Bild ist
-export const SPITZE_Y = 520; // Ruhelage der Stapelspitze
-
-const FINALE_ABSTAND_PX = 90;
-const FINALE_MAX_PX = 740;
-const FINALE_ERSTER_X = 360;
+export const STAPEL_BREITE_PX = 60; // fixed screen width, independent of zoom
+export const BASIS_Y = 1180; // ground line on screen
+export const SPITZE_Y = 520; // resting height of the tallest stack's top
+const L = BASIS_Y - SPITZE_Y;
 
 export const HOEHEN_KM = PROJEKTE.map((p) => hoeheKm(p.kosten_mrd_usd));
-export const K_FINALE = Math.max(...HOEHEN_KM) / FINALE_MAX_PX;
-export const ABSTAND_KM = FINALE_ABSTAND_PX * K_FINALE;
-export const stapelXKm = (i: number) => i * ABSTAND_KM;
-
+export const N = PROJEKTE.length;
 export const ERDE_R_KM = ERDE_DURCHMESSER_KM / 2;
-export const ERDE_X_KM =
-  stapelXKm(0) - (STAPEL_BREITE_PX / 2 + 50) * K_FINALE - ERDE_R_KM;
 
-// Kalibrierstapel und Hochhaus stehen zwischen Erde und Burj-Stapel.
-export const KAL_X_KM = -3000;
-export const HOCHHAUS_X_KM = KAL_X_KM - 0.07;
-export const BURJ_TURM_X_KM = stapelXKm(0) - 0.32;
-export const K_MAKRO = scheineKm(1) / 36;
+// ---------- Timeline ----------
+export const INTRO_ENDE = 60;
+export const HEADLINE_ENDE = 165;
 
-export type Kamera = { cx: number; cy: number; k: number; schwenk: boolean };
+export type Szene = { id: string; start: number; ende: number; wachsStart: number; wachsEnde: number };
+const DAUERN = [120, 90, 90, 90, 105, 210];
+const GLEITEN = 14; // the row slides one slot left before the next stack grows
+const WACHSEN = [60, 48, 48, 48, 56, 140];
+export const SZENEN: Szene[] = (() => {
+  let t = HEADLINE_ENDE;
+  return PROJEKTE.map((p, i) => {
+    const start = t;
+    t += DAUERN[i];
+    const wachsStart = i === 0 ? start + 30 : start + GLEITEN;
+    return { id: p.id, start, ende: t, wachsStart, wachsEnde: wachsStart + WACHSEN[i] };
+  });
+})();
 
+export const FINALE_START = SZENEN[N - 1].ende; // 870
+export const ZOOM_ENDE = FINALE_START + 70;
+export const FINALE_ENDE = FINALE_START + 180; // 1050
+export const CRAWL_START = FINALE_ENDE;
+export const SPRUNG = CRAWL_START + 240; // light-speed jump
+export const DAUER = SPRUNG + 120; // 1410 frames = 47 s
+
+// ---------- Easing ----------
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeInOutCubic = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-const easeInOutSine = (t: number) => -(Math.cos(Math.PI * t) - 1) / 2;
-export const ease = (t: number) => easeInOutSine(clamp01(t));
-const logLerp = (a: number, b: number, t: number) =>
-  Math.exp(lerp(Math.log(a), Math.log(b), t));
-
-type Rahmen = { X: number; kS: number; L: number };
-
-// Kamera, die einen Stapel der Höhe h bei x zeigt: erst wächst er im Bild,
-// dann bleibt die Spitze bei SPITZE_Y und die Welt zoomt heraus.
-const rahmen = (xKm: number, hKm: number, r: Rahmen): Kamera => {
-  const k = Math.sqrt(r.kS ** 2 + (hKm / r.L) ** 2);
-  const basisY = Math.max(BASIS_Y, SPITZE_Y + hKm / k);
-  return { cx: xKm + (W / 2 - r.X) * k, cy: (basisY - H / 2) * k, k, schwenk: false };
+const easeInOutSine = (t: number) => -(Math.cos(Math.PI * clamp01(t)) - 1) / 2;
+const easeInOutCubic = (t: number) => {
+  const x = clamp01(t);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 };
+const logLerp = (a: number, b: number, t: number) => Math.exp(lerp(Math.log(a), Math.log(b), t));
 
-// Fahrt zwischen zwei Kameras: Zoom über log(k), Position so, dass die
-// Bildschirmgeschwindigkeit gleichmäßig bleibt (Weg ∝ ∫k dq).
-const fahrt = (a: Kamera, b: Kamera, u: number, schwenk: boolean): Kamera => {
-  const q = easeInOutCubic(clamp01(u));
-  const k = logLerp(a.k, b.k, q);
-  const w = Math.abs(b.k - a.k) < 1e-9 * a.k ? q : (k - a.k) / (b.k - a.k);
-  return { cx: lerp(a.cx, b.cx, w), cy: lerp(a.cy, b.cy, w), k, schwenk };
-};
-
-// ---------- Kalibrierung 90–240 ----------
-const KAL_RAHMEN: Rahmen = { X: 640, kS: K_MAKRO, L: 730 };
-// Hook: Landezeitpunkte der fallenden Scheine (auch für das Sounddesign).
-export const HOOK_LANDUNGEN = Array.from({ length: 24 }, (_, j) =>
-  Math.round(j === 0 ? 30 : 36 + 58 * Math.pow(j / 23, 0.7)),
-);
-export const HOOK_ENDE = 105;
-
-// Kalibrierung beginnt bei Frame 105 (nach dem Hook).
-export const KAL_LANDUNGEN = [119, 125, 131, 137];
-export const kalScheine = (f: number): number => {
-  if (f < 143) return 1 + KAL_LANDUNGEN.filter((l) => f >= l).length;
-  if (f < 175) return logLerp(4, 1e6, ease((f - 143) / 32));
-  if (f < 193) return 1e6;
-  if (f < 233) return logLerp(1e6, 1e9, ease((f - 193) / 40));
-  return 1e9;
-};
-const kalKamera = (f: number) => rahmen(KAL_X_KM, scheineKm(kalScheine(f)), KAL_RAHMEN);
-
-// ---------- Projekt-Szenen ----------
-export type Szene = {
-  id: string;
-  start: number;
-  ende: number;
-  X: number;
-  kS: number;
-  L: number;
-  schwenk: number;
-  wachsen: number;
-};
-
-const szene = (
-  id: string,
-  start: number,
-  ende: number,
-  X: number,
-  kS: number,
-  wachsen: number,
-  L = 730,
-): Szene => ({ id, start, ende, X, kS, L, schwenk: 20, wachsen });
-
-export const SZENEN: Szene[] = [
-  szene("burj", 270, 400, 620, 0.0014, 50),
-  szene("s21", 400, 525, 540, 0.02, 52),
-  szene("manhattan", 525, 645, 540, 0.05, 50),
-  szene("iss", 645, 765, 540, 0.2, 50),
-  szene("marshall", 765, 885, 540, 0.2, 50),
-  // Apollo etwas weiter weg, damit die Erde am Bildrand steht.
-  szene("apollo", 885, 1045, 860, 1, 70, HOEHEN_KM[5] / 95),
-  // Mag7: längste Fahrt, Kamera folgt der Spitze, die Basis verlässt das Bild.
-  { ...szene("mag7", 1045, 1380, 600, 2, 230, 2400), schwenk: 24 },
-];
-
-export const wachsStart = (s: Szene) => s.start + s.schwenk;
-export const wachsEnde = (s: Szene) => wachsStart(s) + s.wachsen;
-
-// Aktuelle Stapelhöhe in km.
+// Current stack height in km.
+// Burj grows from the ground on a log scale (past the real tower); later stacks grow
+// linearly beside the previous one and overtake it. Mag7 accelerates.
 export const stapelHoeheKm = (f: number, i: number): number => {
   const s = SZENEN[i];
   const hF = HOEHEN_KM[i];
-  if (f < wachsStart(s)) return 0;
-  if (f >= wachsEnde(s)) return hF;
-  const h0 = s.kS * 3;
-  return logLerp(h0, hF, ease((f - wachsStart(s)) / s.wachsen));
+  if (f < s.wachsStart) return 0;
+  if (f >= s.wachsEnde) return hF;
+  const t = (f - s.wachsStart) / (s.wachsEnde - s.wachsStart);
+  if (i === 0) return logLerp(0.004, hF, easeInOutSine(t));
+  if (s.id === "mag7") return hF * (t < 0.85 ? Math.pow(t / 0.85, 2) * 0.9 : 0.9 + 0.1 * easeInOutSine((t - 0.85) / 0.15));
+  return hF * easeInOutCubic(t);
 };
 
-const endKamera = (i: number): Kamera =>
-  i < 0 ? kalKamera(SZENEN[0].start - 1) : rahmen(stapelXKm(i), HOEHEN_KM[i], SZENEN[i]);
+// ---------- Camera ----------
+export type Kamera = { k: number; stapelX: number[]; erdeX: number | null; zoom: number };
 
-export const FINALE_START = 1380;
-export const ZOOM_ENDE = 1470;
-export const FINALE_ENDE = 1650;
+const K_START = 0.0014; // at the ground: the 828 m tower fills the frame
+const smax = (werte: number[]) => Math.pow(werte.reduce((s, v) => s + Math.pow(v, 8), 0), 1 / 8);
 
-export const FINALE_KAMERA: Kamera = {
-  cx: stapelXKm(0) + (W / 2 - FINALE_ERSTER_X) * K_FINALE,
-  cy: (BASIS_Y - H / 2) * K_FINALE,
-  k: K_FINALE,
-  schwenk: false,
+// Height that sets the zoom: smooth maximum of everything already standing.
+const rahmenHoehe = (f: number) => {
+  const hs = PROJEKTE.map((_, i) => stapelHoeheKm(f, i));
+  return smax(hs);
+};
+
+const FINALE_MAX_PX = 600;
+const FINALE_ERSTER_X = 400;
+const FINALE_ABSTAND = 90;
+export const K_FINALE = Math.max(...HOEHEN_KM) / FINALE_MAX_PX;
+
+const AKTUELL_X = 600;
+const ABSTAND = 120;
+const szenenLayout = (c: number) => PROJEKTE.map((_, j) => AKTUELL_X + (j - c) * ABSTAND);
+const finaleLayout = PROJEKTE.map((_, j) => FINALE_ERSTER_X + j * FINALE_ABSTAND);
+const erdeFinaleX = (k: number) => FINALE_ERSTER_X - STAPEL_BREITE_PX / 2 - 50 - ERDE_R_KM / k;
+
+// Index of the active stack, fractional while the row slides.
+const aktuellerSlot = (f: number) => {
+  for (let i = N - 1; i >= 1; i--) {
+    const s = SZENEN[i];
+    if (f >= s.start) return i - 1 + easeInOutCubic((f - s.start) / GLEITEN);
+  }
+  return 0;
+};
+
+const szenenKamera = (f: number): Kamera => {
+  const h = rahmenHoehe(f);
+  const k = Math.sqrt(K_START ** 2 + (h / L) ** 2);
+  return { k, stapelX: szenenLayout(aktuellerSlot(f)), erdeX: null, zoom: 0 };
 };
 
 export const camera = (f: number): Kamera => {
-  if (f < SZENEN[0].start) return kalKamera(f);
-  for (let i = 0; i < SZENEN.length; i++) {
-    const s = SZENEN[i];
-    if (f >= s.ende) continue;
-    if (f < wachsStart(s)) {
-      const ziel = rahmen(stapelXKm(i), 0, s);
-      return fahrt(endKamera(i - 1), ziel, (f - s.start) / s.schwenk, true);
-    }
-    return rahmen(stapelXKm(i), stapelHoeheKm(f, i), s);
-  }
-  if (f < ZOOM_ENDE) {
-    return fahrt(endKamera(SZENEN.length - 1), FINALE_KAMERA, (f - FINALE_START) / (ZOOM_ENDE - FINALE_START), false);
-  }
-  return FINALE_KAMERA;
+  if (f < FINALE_START) return szenenKamera(f);
+  const a = szenenKamera(FINALE_START - 1);
+  const u = easeInOutCubic((f - FINALE_START) / (ZOOM_ENDE - FINALE_START));
+  const k = logLerp(a.k, K_FINALE, u);
+  const stapelX = a.stapelX.map((x, j) => lerp(x, finaleLayout[j], u));
+  const erdeX = lerp(-ERDE_R_KM / k - 60, erdeFinaleX(k), u);
+  return { k, stapelX, erdeX, zoom: u };
 };
 
-export const aktiveSzene = (f: number): number =>
-  SZENEN.findIndex((s) => f >= s.start && f < s.ende);
+export const aktiveSzene = (f: number): number => SZENEN.findIndex((s) => f >= s.start && f < s.ende);
 
-// ---------- Projektion ----------
-export const zuBild = (cam: Kamera, xKm: number, hKm: number): [number, number] => [
-  W / 2 + (xKm - cam.cx) / cam.k,
-  H / 2 - (hKm - cam.cy) / cam.k,
-];
-
+// ---------- Projection ----------
 export type StapelRect = { x: number; basis: number; spitze: number; breite: number; hoehePx: number };
 
-export const stapelRect = (cam: Kamera, xKm: number, hKm: number): StapelRect => {
-  const [x, basis] = zuBild(cam, xKm, 0);
+export const stapelRect = (cam: Kamera, i: number, hKm: number): StapelRect => {
   const hoehePx = hKm / cam.k;
-  return { x, basis, spitze: basis - hoehePx, breite: STAPEL_BREITE_PX, hoehePx };
+  return { x: cam.stapelX[i], basis: BASIS_Y, spitze: BASIS_Y - hoehePx, breite: STAPEL_BREITE_PX, hoehePx };
 };
 
-export const erdeBild = (cam: Kamera) => {
-  const [x, y] = zuBild(cam, ERDE_X_KM, ERDE_R_KM);
-  return { x, y, r: ERDE_R_KM / cam.k };
-};
+// Altitude (km) of a screen row
+export const hoeheBeiY = (cam: Kamera, y: number) => (BASIS_Y - y) * cam.k;
 
-// Höhenmarker: ausgeblendet, wenn zu dicht an der Grundlinie oder am nächsthöheren Marker.
-export const markerLayout = (cam: Kamera) => {
-  const [, basis] = zuBild(cam, 0, 0);
-  return HOEHENMARKER.map((m, i) => {
-    const naechster = HOEHENMARKER[i + 1];
-    const dBasis = m.km / cam.k;
-    const luecke = naechster ? (naechster.km - m.km) / cam.k : Infinity;
-    const deckung = clamp01((dBasis - 12) / 12) * clamp01((luecke - 60) / 30);
-    return { ...m, y: basis - dBasis, deckung };
-  });
-};
+export const erdeBild = (cam: Kamera) =>
+  cam.erdeX === null ? null : { x: cam.erdeX, y: BASIS_Y - ERDE_R_KM / cam.k, r: ERDE_R_KM / cam.k };

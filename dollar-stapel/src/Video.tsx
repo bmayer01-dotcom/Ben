@@ -1,76 +1,58 @@
 import React from "react";
-import { AbsoluteFill, Html5Audio, interpolate, spring, staticFile, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Html5Audio, spring, staticFile, useCurrentFrame } from "remotion";
 import { PROJEKTE } from "./data.ts";
-import { DS, grotesk, inter, mono, RAND } from "./design.ts";
-import { Endcard } from "./endcard.tsx";
-import { Hook } from "./hook.tsx";
+import { DS, grotesk, inter, mono } from "./design.ts";
+import { Crawl } from "./crawl.tsx";
 import { ProjektIcon } from "./icons.tsx";
-import { formatHoehe, formatKm, formatMrd, scheineKm } from "./scale.ts";
+import { Intro } from "./intro.tsx";
+import { formatHoehe, formatMrd, scheineKm } from "./scale.ts";
 import { clamp01, expoOut, Eyebrow, Glas, prog, Woerter, Zeile } from "./ui.tsx";
 import {
   aktiveSzene,
-  BURJ_TURM_X_KM,
+  BASIS_Y,
   camera,
+  CRAWL_START,
   erdeBild,
   FINALE_ENDE,
   FINALE_START,
   FPS,
   H,
-  HOCHHAUS_X_KM,
+  HEADLINE_ENDE,
   HOEHEN_KM,
-  KAL_LANDUNGEN,
-  KAL_X_KM,
-  kalScheine,
-  markerLayout,
+  hoeheBeiY,
+  N,
   stapelHoeheKm,
   stapelRect,
-  stapelXKm,
   SZENEN,
   W,
-  wachsEnde,
-  wachsStart,
-  zuBild,
+  ZOOM_ENDE,
 } from "./world.ts";
 import type { Kamera, StapelRect } from "./world.ts";
 
-const FARBE = {
-  schein: "#6B8F71",
-  kante: "#4E6E55",
-  scheinTöne: ["#6B8F71", "#759A7B", "#64886A", "#70947A"],
-  silhouette: "#9AA8A0",
-  erde: "#4278d2",
-  erdeNacht: "#2151af",
-};
+const fade = (f: number, a: number, b: number) => prog(f, a, b - a);
 
-const TEXT_UNTEN = H - RAND;
-
-const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
-const fade = (f: number, a: number, b: number) => interpolate(f, [a, b], [0, 1], clamp);
-
-// ---------- Himmel ----------
+// ---------- Sky: colour by the altitude of each screen row ----------
 const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const mix = (a: string, b: string, t: number) => {
   const A = hex(a);
   const B = hex(b);
-  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`;
+  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * clamp01(t))).join(",")})`;
 };
+const HIMMEL_BODEN = "#DDF3E6";
+const HIMMEL_MITTE = "#0E2A22";
 const himmelFarbe = (alt: number) => {
-  if (alt <= 1) return mix(DS.hell, DS.hell, 0);
-  if (alt <= 100) return mix(DS.hell, DS.card, Math.log10(alt) / 2);
-  if (alt <= 400) return mix(DS.card, DS.background, Math.log10(alt / 100) / Math.log10(4));
-  return mix(DS.background, DS.background, 0);
+  if (alt <= 1) return mix(HIMMEL_BODEN, HIMMEL_BODEN, 0);
+  if (alt <= 100) return mix(HIMMEL_BODEN, HIMMEL_MITTE, Math.log10(alt) / 2);
+  if (alt <= 400) return mix(HIMMEL_MITTE, DS.background, Math.log10(alt / 100) / Math.log10(4));
+  return DS.background;
 };
-const sternSicht = (alt: number) => clamp01(Math.log10(Math.max(alt, 1) / 100) / Math.log10(4));
-const hoeheBeiY = (cam: Kamera, y: number) => cam.cy + (H / 2 - y) * cam.k;
-
-// Stopps an festen Höhen, damit der Übergang bei jedem Zoom an der richtigen Stelle sitzt.
 const HIMMEL_HOEHEN = [0, 1, 2, 5, 10, 20, 50, 100, 200, 400];
 const Himmel: React.FC<{ cam: Kamera }> = ({ cam }) => {
-  const yBei = (alt: number) => H / 2 - (alt - cam.cy) / cam.k;
+  const yBei = (alt: number) => BASIS_Y - alt / cam.k;
   const stops = [
     { y: 0, c: himmelFarbe(hoeheBeiY(cam, 0)) },
     ...HIMMEL_HOEHEN.map((alt) => ({ y: yBei(alt), c: himmelFarbe(alt) })).filter((p) => p.y > 0 && p.y < H),
-    { y: H, c: himmelFarbe(hoeheBeiY(cam, H)) },
+    { y: H, c: himmelFarbe(Math.max(hoeheBeiY(cam, H), 0)) },
   ].sort((a, b) => a.y - b.y);
   return <AbsoluteFill style={{ background: `linear-gradient(to bottom, ${stops.map((p) => `${p.c} ${((p.y / H) * 100).toFixed(3)}%`).join(",")})` }} />;
 };
@@ -83,13 +65,13 @@ const zufall = (seed: number) => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
+// Stars drift with log(camera altitude); fast climbs pull them into streaks.
+const sternSicht = (alt: number) => clamp01(Math.log10(Math.max(alt, 1) / 100) / Math.log10(4));
 const STERNE = (() => {
   const r = zufall(7);
-  return Array.from({ length: 46 }, () => ({ x: r() * W, y: r() * H, r: 1.1 + r() * 1.6, a: 0.3 + r() * 0.6, tiefe: 0.35 + r() * 0.65 }));
+  return Array.from({ length: 56 }, () => ({ x: r() * W, y: r() * H, r: 1.1 + r() * 1.7, a: 0.35 + r() * 0.6, tiefe: 0.35 + r() * 0.65 }));
 })();
-// Sterne driften mit log(Kamerahöhe): beim schnellen Steigflug ziehen sie Schlieren (Warp).
-const parallaxe = (cam: Kamera) => Math.log10(Math.max(cam.cy, 0) + 1) * 520;
-
+const parallaxe = (cam: Kamera) => Math.log10(hoeheBeiY(cam, H / 2) + 1) * 520;
 const Sterne: React.FC<{ cam: Kamera; vorher: Kamera }> = ({ cam, vorher }) => {
   const p = parallaxe(cam);
   const dp = p - parallaxe(vorher);
@@ -99,9 +81,9 @@ const Sterne: React.FC<{ cam: Kamera; vorher: Kamera }> = ({ cam, vorher }) => {
         const y = (((s.y + p * s.tiefe) % H) + H) % H;
         const o = sternSicht(hoeheBeiY(cam, y)) * s.a;
         if (o <= 0.01) return null;
-        const zug = Math.min(Math.abs(dp) * s.tiefe * 1.4, 160);
+        const zug = Math.min(Math.abs(dp) * s.tiefe * 0.7, 90);
         return zug > 2 ? (
-          <line key={i} x1={s.x} x2={s.x} y1={y} y2={y - Math.sign(dp) * zug} stroke={DS.foreground} strokeWidth={s.r * 1.3} strokeLinecap="round" opacity={o * 0.8} />
+          <line key={i} x1={s.x} x2={s.x} y1={y} y2={y - Math.sign(dp) * zug} stroke={i % 7 === 0 ? DS.primary : DS.foreground} strokeWidth={s.r * 1.3} strokeLinecap="round" opacity={o * 0.85} />
         ) : (
           <circle key={i} cx={s.x} cy={y} r={s.r} fill={DS.foreground} opacity={o} />
         );
@@ -110,24 +92,16 @@ const Sterne: React.FC<{ cam: Kamera; vorher: Kamera }> = ({ cam, vorher }) => {
   );
 };
 
-// ---------- Wolken ----------
-type Wolke = { x: number; alt: number; w: number; h: number; vorne: boolean };
-const WOLKEN: Wolke[] = (() => {
-  const anker = [KAL_X_KM, ...PROJEKTE.map((_, i) => stapelXKm(i))];
-  const out: Wolke[] = [];
-  anker.forEach((ax, j) => {
-    const r = zufall(100 + j);
-    for (let n = 0; n < 9; n++) {
-      out.push({ x: ax + (r() - 0.5) * 30, alt: 7 + r() * 4, w: 2.5 + r() * 4, h: 0.6 + r() * 0.6, vorne: n % 3 === 0 });
-    }
-  });
-  return out;
+// ---------- Clouds around the Burj stack (true scale) ----------
+const WOLKEN = (() => {
+  const r = zufall(100);
+  return Array.from({ length: 10 }, (_, n) => ({ dx: (r() - 0.5) * 30, alt: 7 + r() * 4, w: 2.5 + r() * 4, h: 0.6 + r() * 0.6, vorne: n % 3 === 0 }));
 })();
-
 const Wolken: React.FC<{ cam: Kamera; vorne: boolean }> = ({ cam, vorne }) => (
   <g>
     {WOLKEN.filter((w) => w.vorne === vorne).map((w, i) => {
-      const [x, y] = zuBild(cam, w.x, w.alt);
+      const x = cam.stapelX[0] + w.dx / cam.k;
+      const y = BASIS_Y - w.alt / cam.k;
       const rx = w.w / 2 / cam.k;
       const ry = w.h / 2 / cam.k;
       if (rx < 2 || x + rx < -50 || x - rx > W + 50 || y + ry < -50 || y - ry > H + 50) return null;
@@ -142,28 +116,38 @@ const Wolken: React.FC<{ cam: Kamera; vorne: boolean }> = ({ cam, vorne }) => (
   </g>
 );
 
-// ---------- Gebäude (echte Höhe) ----------
-// Halbe Breite und Höhe in Metern.
+// ---------- The real Burj Khalifa beside its stack (828 m, true height) ----------
+const TURM_VERSATZ = 200; // px left of the stack
+// half width and height in metres
 const BURJ_PROFIL: [number, number][] = [
   [45, 0], [45, 160], [36, 160], [36, 310], [28, 310], [28, 440], [20, 440],
   [20, 560], [13, 560], [13, 640], [7, 640], [7, 700], [3, 700], [0.8, 828],
 ];
-const HOCHHAUS_PROFIL: [number, number][] = [[17, 0], [17, 92], [9, 92], [9, 100]];
-
-const Silhouette: React.FC<{ cam: Kamera; xKm: number; profil: [number, number][] }> = ({ cam, xKm, profil }) => {
-  const rechts = profil.map(([b, h]) => zuBild(cam, xKm + b / 1000, h / 1000));
-  const links = [...profil].reverse().map(([b, h]) => zuBild(cam, xKm - b / 1000, h / 1000));
-  const hoehePx = profil[profil.length - 1][1] / 1000 / cam.k;
-  if (hoehePx < 1 || rechts[0][0] < -200 || links[links.length - 1][0] > W + 200) return null;
-  return <polygon points={[...rechts, ...links].map((p) => p.join(",")).join(" ")} fill={FARBE.silhouette} />;
+const turmX = (cam: Kamera) => cam.stapelX[0] - TURM_VERSATZ;
+const Turm: React.FC<{ cam: Kamera }> = ({ cam }) => {
+  const hoehePx = 0.828 / cam.k;
+  if (hoehePx < 1) return null;
+  const x0 = turmX(cam);
+  const pkt = (b: number, h: number) => `${x0 + b / 1000 / cam.k},${BASIS_Y - h / 1000 / cam.k}`;
+  const pts = [...BURJ_PROFIL.map(([b, h]) => pkt(b, h)), ...[...BURJ_PROFIL].reverse().map(([b, h]) => pkt(-b, h))];
+  return (
+    <g>
+      <defs>
+        <linearGradient id="turm" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#A9C9BA" />
+          <stop offset="1" stopColor="#5F7E72" />
+        </linearGradient>
+      </defs>
+      <polygon points={pts.join(" ")} fill="url(#turm)" />
+    </g>
+  );
 };
 
-// ---------- Stapel ----------
-// Leichte Schrägansicht: feste Tiefe in Pixeln, unabhängig vom Zoom.
+// ---------- Stacks: light 3D, front height exactly to scale ----------
 const TIEFE3D_X = 12;
 const TIEFE3D_Y = -7;
-const GRUEN_3D = { hell: "#7FA285", dunkel: "#5F8466", seite: "#4E6E55", deckel: "#9CBBA1" };
-const MINT_3D = { hell: "#6BE38F", dunkel: "#3FC86A", seite: "#00b666", deckel: "#A5F0BC" };
+const GRUEN_3D = { hell: "#8CD19E", dunkel: "#4C9A63", seite: "#3A7A4E", deckel: "#C2EFCD" };
+const MINT_3D = { hell: "#7DF2A2", dunkel: "#3FD06D", seite: "#00b666", deckel: "#B8F7CB" };
 const Verlaeufe: React.FC = () => (
   <>
     {([["front-gruen", GRUEN_3D], ["front-mint", MINT_3D]] as const).map(([id, t]) => (
@@ -176,55 +160,36 @@ const Verlaeufe: React.FC = () => (
       <feGaussianBlur stdDeviation="8" />
     </filter>
     <filter id="bloom" x="-200%" y="-5%" width="500%" height="110%">
-      <feGaussianBlur stdDeviation="20" />
+      <feGaussianBlur stdDeviation="22" />
     </filter>
     <radialGradient id="erde-licht" cx="0.35" cy="0.3" r="0.75">
-      <stop offset="0" stopColor="#7FA8EA" />
-      <stop offset="0.55" stopColor={FARBE.erde} />
-      <stop offset="1" stopColor={FARBE.erdeNacht} />
+      <stop offset="0" stopColor="#8DB8FF" />
+      <stop offset="0.55" stopColor="#3D7BE6" />
+      <stop offset="1" stopColor="#1C46B0" />
     </radialGradient>
+    <linearGradient id="horizont" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stopColor={DS.primary} stopOpacity="0.16" />
+      <stop offset="1" stopColor={DS.primary} stopOpacity="0" />
+    </linearGradient>
   </>
 );
-const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number; licht?: number }> = ({ r, mag, scheinPx, licht = 0 }) => {
+
+const Stapel: React.FC<{ r: StapelRect; mag: boolean; licht: number }> = ({ r, mag, licht }) => {
   const oben = Math.max(r.spitze, -20);
   const unten = Math.min(r.basis, H + 20);
   if (unten <= oben || r.hoehePx <= 0) return null;
   const x0 = r.x - r.breite / 2;
-  const kante = mag ? DS.primaryDeep : FARBE.kante;
-  // In der Nahaufnahme einzelne Scheine (leicht unterschiedliche Töne), sonst glatte Säule.
-  const scheine: { y: number; n: number }[] = [];
-  const nah = clamp01((scheinPx - 3) / 5);
-  if (nah > 0) {
-    const start = Math.max(0, Math.floor((r.basis - unten) / scheinPx));
-    for (let n = start; n < start + 400; n++) {
-      const y = r.basis - (n + 1) * scheinPx;
-      if (y + scheinPx <= Math.max(oben, r.spitze)) break;
-      scheine.push({ y: Math.max(y, r.spitze), n });
-    }
-  }
-  // Die Front hat exakt die Maßstabshöhe; Seite und Deckel sind nur Tiefe (feste Bildschirmmaße).
-  const ton = mag ? MINT_3D : GRUEN_3D;
   const x1 = x0 + r.breite;
-  const deckelSichtbar = r.spitze > -20;
+  const ton = mag ? MINT_3D : GRUEN_3D;
   return (
     <g>
-      {/* Mint-Bloom hinter dem Mag7-Stapel */}
-      {mag ? <rect x={x0 - 10} y={oben} width={r.breite + 32} height={unten - oben} fill={DS.primary} opacity={0.28} filter="url(#bloom)" /> : null}
+      {mag ? <rect x={x0 - 12} y={oben} width={r.breite + 36} height={unten - oben} fill={DS.primary} opacity={0.32} filter="url(#bloom)" /> : null}
       <polygon points={`${x1},${oben} ${x1 + TIEFE3D_X},${oben + TIEFE3D_Y} ${x1 + TIEFE3D_X},${unten + TIEFE3D_Y} ${x1},${unten}`} fill={ton.seite} />
       <rect x={x0} y={oben} width={r.breite} height={unten - oben} fill={`url(#${mag ? "front-mint" : "front-gruen"})`} />
-      {scheine.map(({ y, n }) => (
-        <g key={n} opacity={nah}>
-          <rect x={x0} y={y} width={r.breite} height={Math.min(scheinPx, r.basis - n * scheinPx - y)} fill={FARBE.scheinTöne[n % 4]} />
-          <line x1={x0} x2={x1} y1={y + 0.75} y2={y + 0.75} stroke={kante} strokeWidth={1.5} />
-        </g>
-      ))}
-      {deckelSichtbar ? (
-        <polygon points={`${x0},${r.spitze} ${x0 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1},${r.spitze}`} fill={ton.deckel} />
-      ) : null}
-      {/* Lichtkante, solange der Stapel wächst */}
-      {licht > 0 && deckelSichtbar ? (
+      <polygon points={`${x0},${r.spitze} ${x0 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1 + TIEFE3D_X},${r.spitze + TIEFE3D_Y} ${x1},${r.spitze}`} fill={ton.deckel} />
+      {licht > 0 ? (
         <g opacity={licht}>
-          <ellipse cx={x0 + r.breite / 2 + TIEFE3D_X / 2} cy={r.spitze + TIEFE3D_Y / 2} rx={62} ry={16} fill={mag ? DS.primary : "#FFFFFF"} opacity={0.55} filter="url(#weich)" />
+          <ellipse cx={x0 + r.breite / 2 + TIEFE3D_X / 2} cy={r.spitze + TIEFE3D_Y / 2} rx={64} ry={16} fill={mag ? DS.primary : "#FFFFFF"} opacity={0.6} filter="url(#weich)" />
           <line x1={x0} x2={x1 + TIEFE3D_X} y1={r.spitze + TIEFE3D_Y / 2} y2={r.spitze + TIEFE3D_Y / 2} stroke="#FFFFFF" strokeWidth={2} />
         </g>
       ) : null}
@@ -232,161 +197,127 @@ const Stapel: React.FC<{ r: StapelRect; mag: boolean; scheinPx: number; licht?: 
   );
 };
 
-// Fallender Einzelschein in der Kalibrier-Nahaufnahme
-const FallenderSchein: React.FC<{ f: number; r: StapelRect; scheinPx: number }> = ({ f, r, scheinPx }) => {
-  const landung = KAL_LANDUNGEN.find((l) => f < l && f >= l - 6);
-  if (landung === undefined) return null;
-  const t = (f - (landung - 6)) / 6;
-  const y = r.spitze - scheinPx - (1 - t * t) * 260;
-  return (
-    <rect x={r.x - r.breite / 2} y={y} width={r.breite} height={scheinPx} fill={FARBE.scheinTöne[KAL_LANDUNGEN.indexOf(landung) % 4]} stroke={FARBE.kante} strokeWidth={1.5} opacity={fade(f, landung - 6, landung - 4)} />
-  );
+const Aufprall: React.FC<{ f: number; r: StapelRect; landung: number; mag: boolean }> = ({ f, r, landung, mag }) => {
+  const t = prog(f, landung + 3, 18);
+  if (t <= 0 || t >= 1) return null;
+  const rx = 34 + 120 * expoOut(t);
+  return <ellipse cx={r.x + TIEFE3D_X / 2} cy={r.spitze + TIEFE3D_Y / 2} rx={rx} ry={rx * 0.3} fill="none" stroke={mag ? DS.primary : DS.foreground} strokeWidth={3 * (1 - t) + 0.5} opacity={1 - t} />;
 };
 
-const iconDrop = (f: number, landung: number) =>
-  spring({ frame: f - landung, fps: FPS, config: { damping: 8, stiffness: 170, mass: 0.6 } });
-
-// ---------- Marker ----------
-type Block = { links: number; rechts: number; oben: number; unten: number; deckung: number };
-
-const MarkerLinien: React.FC<{ cam: Kamera }> = ({ cam }) => (
-  <g>
-    {markerLayout(cam).map((m) =>
-      m.deckung > 0 && m.y > -5 && m.y < H + 5 ? (
-        <line key={m.id} x1={0} x2={W} y1={m.y} y2={m.y} stroke={DS.muted} strokeOpacity={0.85 * m.deckung} strokeWidth={2} strokeDasharray="12 10" />
-      ) : null,
-    )}
-  </g>
-);
-
-const CHIP_X = 32;
-const CHIP_W = 270;
-const CHIP_H = 92;
-// Wie stark ein Chip an Position `oben` frei ist (0 = verdeckt, 1 = frei); weich über 24 px Abstand.
-const frei = (oben: number, bloecke: Block[]) =>
-  bloecke.reduce((acc, b) => {
-    const vertikal = oben < b.unten + 8 && oben + CHIP_H > b.oben - 8;
-    if (!vertikal || b.deckung <= 0) return acc;
-    const abstand = Math.max(b.links - (CHIP_X + CHIP_W), CHIP_X - b.rechts);
-    return acc * (1 - b.deckung * (1 - clamp01(abstand / 24)));
-  }, 1);
-
-// Von oben nach unten platzieren; gesetzte Chips blockieren die folgenden.
-const MarkerLabels: React.FC<{ cam: Kamera; bloecke: Block[] }> = ({ cam, bloecke }) => {
-  const belegt = [...bloecke];
-  const chips = [...markerLayout(cam)].reverse().flatMap((m) => {
-    if (m.deckung <= 0) return [];
-    const ueber = m.y - 8 - CHIP_H;
-    const unter = m.y + 8;
-    const oben = frei(ueber, belegt) >= frei(unter, belegt) ? ueber : unter;
-    const d = m.deckung * frei(oben, belegt) * clamp01((oben - RAND) / 20) * clamp01((TEXT_UNTEN - oben - CHIP_H) / 20);
-    if (d <= 0.01) return [];
-    belegt.push({ links: CHIP_X - 30, rechts: CHIP_X + CHIP_W, oben, unten: oben + CHIP_H, deckung: d });
-    return [{ m, oben, d }];
-  });
-  return (
-    <>
-      {chips.map(({ m, oben, d }) => (
-        <div key={m.id} style={{ position: "absolute", left: CHIP_X, top: oben, opacity: d, background: "rgba(6,10,8,0.82)", boxShadow: `0 0 0 1px ${DS.border}`, borderRadius: 8, padding: "6px 14px", color: DS.foreground, lineHeight: "40px" }}>
-          <div style={{ fontFamily: inter, fontSize: 36, fontWeight: 600 }}>{m.kurz}</div>
-          <div style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>{formatKm(m.km)}</div>
-        </div>
-      ))}
-    </>
-  );
+// Only the newest stack carries its icon; it fades when the next one starts.
+const iconDeckung = (f: number, i: number) => {
+  const ende = i + 1 < N ? SZENEN[i + 1].start : FINALE_START;
+  return fade(f, SZENEN[i].wachsEnde, SZENEN[i].wachsEnde + 3) * (1 - fade(f, ende, ende + 8));
 };
 
-// ---------- Erde ----------
+// ---------- Earth (finale) ----------
 const Erde: React.FC<{ cam: Kamera }> = ({ cam }) => {
   const e = erdeBild(cam);
-  if (e.r < 1 || e.x + e.r < 0 || e.x - e.r > W) return null;
-  return (
-    <g>
-      <circle cx={e.x} cy={e.y} r={e.r} fill="url(#erde-licht)" />
-    </g>
-  );
+  if (!e || e.x + e.r < 0) return null;
+  return <circle cx={e.x} cy={e.y} r={e.r} fill="url(#erde-licht)" />;
 };
-const ErdeLabel: React.FC<{ cam: Kamera }> = ({ cam }) => {
+const ErdeLabel: React.FC<{ cam: Kamera; f: number }> = ({ cam, f }) => {
   const e = erdeBild(cam);
-  if (e.r < 50 || e.x < 50) return null;
+  if (!e) return null;
   return (
-    <div style={{ position: "absolute", left: e.x - 100, width: 200, top: e.y - 22, textAlign: "center", fontFamily: grotesk, fontSize: 36, fontWeight: 600, color: DS.foreground, opacity: clamp01((e.r - 50) / 10) }}>
-      Erde
+    <div style={{ position: "absolute", left: e.x - 100, width: 200, top: e.y - e.r - 54, textAlign: "center", fontFamily: grotesk, fontSize: 36, fontWeight: 600, color: DS.foreground, opacity: fade(f, ZOOM_ENDE - 20, ZOOM_ENDE) }}>
+      Earth
     </div>
   );
 };
 
-// ---------- Projektkarte ----------
-const kostenKurz = (i: number) => PROJEKTE[i].kosten_anzeige?.split(" (")[0] ?? formatMrd(PROJEKTE[i].kosten_mrd_usd);
-const karteStart = (i: number) => wachsEnde(SZENEN[i]) + 6;
-// Kosten zählen hoch; die S21-Angabe mit ≈ und € bleibt als Text stehen.
-const kostenZaehlend = (i: number, e: number) => PROJEKTE[i].kosten_anzeige ?? formatMrd(Math.round(PROJEKTE[i].kosten_mrd_usd * e * 10) / 10);
+// ---------- Project card (fixed at the top) ----------
+const KARTE_OBEN = 72;
+const karteStart = (i: number) => SZENEN[i].wachsEnde + 6;
+const karteEnde = (i: number) => (i + 1 < N ? SZENEN[i + 1].wachsEnde : FINALE_START);
 
-const Karte: React.FC<{ i: number; f: number; unten: number }> = ({ i, f, unten }) => {
+const Karte: React.FC<{ i: number; f: number }> = ({ i, f }) => {
   const p = PROJEKTE[i];
   const mag = p.id === "mag7";
   const t0 = karteStart(i);
-  const aus = prog(f, SZENEN[i].ende, 6);
+  const aus = prog(f, karteEnde(i), 8);
   const zahl = expoOut(prog(f, t0 + 6, 22));
   return (
-    <div style={{ position: "absolute", left: 40, right: 40, bottom: H - unten, opacity: 1 - aus, transform: `translateY(${aus * -16}px)` }}>
+    <div style={{ position: "absolute", left: 40, right: 40, top: KARTE_OBEN, opacity: 1 - aus, transform: `translateY(${aus * -16}px)` }}>
       <Glas akzent={mag} wipe={expoOut(prog(f, t0, 14))} innen={{ padding: "22px 30px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <Woerter f={f} start={t0 + 4} text={p.name} style={{ fontFamily: grotesk, fontSize: 52, fontWeight: 600, lineHeight: "60px", letterSpacing: "-0.01em", color: mag ? DS.primary : DS.foreground }} />
           <Zeile f={f} start={t0 + 6}>
-            <Eyebrow akzent={mag} text={`${String(i + 1).padStart(2, "0")} / ${String(PROJEKTE.length).padStart(2, "0")}`} />
+            <Eyebrow akzent={mag} text={`${String(i + 1).padStart(2, "0")} / ${String(N).padStart(2, "0")}`} />
           </Zeile>
         </div>
         <Zeile f={f} start={t0 + 8} style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 22, fontFamily: grotesk, fontSize: 44, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-            <span>{kostenZaehlend(i, zahl)}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 22, fontFamily: grotesk, fontSize: 46, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+            <span>{formatMrd(Math.round(p.kosten_mrd_usd * zahl * 10) / 10)}</span>
             <span style={{ width: 2, height: 34, background: DS.borderStrong }} />
             <span>{formatHoehe(HOEHEN_KM[i] * zahl)}</span>
           </div>
         </Zeile>
         <Zeile f={f} start={t0 + 12} style={{ marginTop: 8 }}>
-          <div style={{ fontFamily: inter, fontSize: 36, lineHeight: "44px", color: DS.muted }}>{p.kontextzeile}</div>
+          <div style={{ fontFamily: inter, fontSize: 36, lineHeight: "44px", color: "#B4BDB8" }}>{p.kontextzeile}</div>
         </Zeile>
       </Glas>
     </div>
   );
 };
 
-// Schockwelle, wenn das Icon aufsetzt
-const Aufprall: React.FC<{ f: number; r: StapelRect; landung: number; mag: boolean }> = ({ f, r, landung, mag }) => {
-  const t = prog(f, landung + 3, 18);
-  if (t <= 0 || t >= 1) return null;
-  const e = expoOut(t);
-  const rx = 34 + 120 * e;
+// ---------- Burj scene: how to read the stacks ----------
+const ERKL_START = HEADLINE_ENDE + 4;
+const ERKL_ENDE = SZENEN[0].wachsEnde - 4;
+const Erklaerung: React.FC<{ f: number; cam: Kamera }> = ({ f, cam }) => {
+  const aus = prog(f, ERKL_ENDE, 8);
+  if (f < ERKL_START || aus >= 1) return null;
+  const turmOben = BASIS_Y - 0.828 / cam.k;
+  const turmChip = fade(f, ERKL_START + 10, ERKL_START + 18) * (1 - fade(f, SZENEN[0].wachsStart + 14, SZENEN[0].wachsStart + 22));
   return (
-    <ellipse cx={r.x + TIEFE3D_X / 2} cy={r.spitze + TIEFE3D_Y / 2} rx={rx} ry={rx * 0.3} fill="none" stroke={mag ? DS.primary : DS.foreground} strokeWidth={3 * (1 - t) + 0.5} opacity={1 - t} />
+    <>
+      <div style={{ position: "absolute", left: 40, right: 40, top: KARTE_OBEN, opacity: 1 - aus }}>
+        <Glas wipe={expoOut(prog(f, ERKL_START, 14))} innen={{ padding: "22px 30px 24px" }}>
+          <Zeile f={f} start={ERKL_START + 3}>
+            <Eyebrow text="How to read this" />
+          </Zeile>
+          <Zeile f={f} start={ERKL_START + 6} style={{ marginTop: 10 }}>
+            <div style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, lineHeight: "58px" }}>Each stack is made of $1 bills.</div>
+          </Zeile>
+          <Zeile f={f} start={ERKL_START + 10} style={{ marginTop: 6 }}>
+            <div style={{ fontFamily: inter, fontSize: 38, lineHeight: "48px", color: "#B4BDB8" }}>
+              One bill is {formatHoehe(scheineKm(1))} thick. Heights are to scale.
+            </div>
+          </Zeile>
+        </Glas>
+      </div>
+      {turmChip > 0 ? (
+        <div style={{ position: "absolute", right: W - (turmX(cam) - 60), top: Math.max(turmOben - 10, 420), opacity: turmChip, textAlign: "right" }}>
+          <Glas innen={{ padding: "8px 16px", lineHeight: "42px" }}>
+            <div style={{ fontFamily: grotesk, fontSize: 36, fontWeight: 600 }}>Burj Khalifa</div>
+            <div style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>828 m</div>
+          </Glas>
+        </div>
+      ) : null}
+    </>
   );
 };
 
-const iconDeckung = (f: number, i: number) => {
-  const ende = i + 1 < SZENEN.length ? SZENEN[i + 1].start : FINALE_START;
-  return fade(f, wachsEnde(SZENEN[i]), wachsEnde(SZENEN[i]) + 3) * (1 - fade(f, ende, ende + 8));
-};
-
-// ---------- Zähler unten rechts: Höhe, im Zoom-out der Maßstab ----------
+// ---------- Counter bottom right: height, during the zoom-out the scale ----------
 const Zaehler: React.FC<{ f: number; cam: Kamera }> = ({ f, cam }) => {
-  let label = "Höhe";
+  let label = "Height";
   let wert = "";
   let d = 0;
   if (f >= FINALE_START) {
-    label = "Maßstab";
-    wert = `1 px ≙ ${formatHoehe(cam.k)}`;
-    d = fade(f, FINALE_START + 6, FINALE_START + 14) * (1 - fade(f, 1476, 1484));
+    label = "Scale";
+    wert = `1 px = ${formatHoehe(cam.k)}`;
+    d = fade(f, FINALE_START + 4, FINALE_START + 12) * (1 - fade(f, ZOOM_ENDE + 6, ZOOM_ENDE + 14));
   } else {
     const i = aktiveSzene(f);
     if (i < 0) return null;
     const s = SZENEN[i];
-    if (f < wachsStart(s)) {
-      wert = formatHoehe(i === 0 ? scheineKm(1e9) : HOEHEN_KM[i - 1]);
-      d = i === 0 ? 0 : 1 - fade(f, s.start, s.start + 6);
+    if (f < s.wachsStart) {
+      if (i === 0) return null;
+      wert = formatHoehe(HOEHEN_KM[i - 1]);
+      d = 1 - fade(f, s.start, s.start + 6);
     } else {
       wert = formatHoehe(stapelHoeheKm(f, i));
-      d = fade(f, wachsStart(s), wachsStart(s) + 4);
+      d = fade(f, s.wachsStart, s.wachsStart + 4);
     }
   }
   if (d <= 0) return null;
@@ -400,84 +331,25 @@ const Zaehler: React.FC<{ f: number; cam: Kamera }> = ({ f, cam }) => {
   );
 };
 
-// ---------- Kalibrierung: Überschrift + Maßlinie am Stapel ----------
-const KAL_TEXTE = [
-  { von: 115, bis: 160, text: `1 Schein = ${formatHoehe(scheineKm(1))}` },
-  { von: 169, bis: 207, text: `1 Mio. $ = ${formatHoehe(scheineKm(1e6))}` },
-  { von: 227, bis: 278, text: `1 Mrd. $ = ${formatHoehe(scheineKm(1e9))}` },
-];
-const KAL_TEXT_OBEN = 90;
-const KAL_TEXT_UNTEN = 250;
-const kalDeckung = (f: number, t: { von: number; bis: number }) => fade(f, t.von, t.von + 6) * (1 - fade(f, t.bis - 8, t.bis));
-
-const KalTitel: React.FC<{ f: number }> = ({ f }) => (
-  <>
-    {KAL_TEXTE.map((t) => {
-      const d = kalDeckung(f, t);
-      if (d <= 0) return null;
-      return (
-        <div key={t.text} style={{ position: "absolute", left: 0, right: 0, top: KAL_TEXT_OBEN, display: "flex", justifyContent: "center", opacity: 1 - fade(f, t.bis - 8, t.bis) }}>
-          <Glas wipe={expoOut(prog(f, t.von, 12))} innen={{ padding: "18px 34px 22px" }}>
-            <Zeile f={f} start={t.von + 2}>
-              <Eyebrow text="Maßstab" />
-            </Zeile>
-            <Zeile f={f} start={t.von + 5}>
-              <div style={{ fontFamily: grotesk, fontSize: 64, fontWeight: 600, lineHeight: "74px", letterSpacing: "-0.015em" }}>{t.text}</div>
-            </Zeile>
-          </Glas>
-        </div>
-      );
-    })}
-  </>
-);
-
-const Masslinie: React.FC<{ f: number; r: StapelRect }> = ({ f, r }) => {
-  const d = fade(f, 112, 120) * (1 - fade(f, 262, 272));
-  if (d <= 0) return null;
-  const x = r.x + r.breite / 2 + TIEFE3D_X + 30;
-  const oben = Math.max(r.spitze, 40);
-  const unten = Math.min(r.basis, H);
-  const strich = (y1: number, y2: number, x1 = x, x2 = x) => (
-    <>
-      <line x1={x1} x2={x2} y1={y1} y2={y2} stroke={DS.background} strokeOpacity={0.55} strokeWidth={5} strokeLinecap="round" />
-      <line x1={x1} x2={x2} y1={y1} y2={y2} stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
-    </>
-  );
-  const mitte = (oben + unten) / 2;
-  return (
-    <>
-      <svg width={W} height={H} style={{ position: "absolute", opacity: d }}>
-        {strich(oben, unten)}
-        {strich(oben, oben, x - 12, x + 12)}
-        {strich(unten, unten, x - 12, x + 12)}
-      </svg>
-      <div style={{ position: "absolute", left: x + 22, top: Math.min(Math.max(mitte - 30, 280), 1110), opacity: d }}>
-        <Glas innen={{ padding: "6px 16px", fontFamily: mono, fontSize: 36, fontVariantNumeric: "tabular-nums" }}>{formatHoehe(scheineKm(kalScheine(f)))}</Glas>
-      </div>
-    </>
-  );
-};
-
-// ---------- Fortschritt oben ----------
+// ---------- Progress at the top ----------
 const Fortschritt: React.FC<{ f: number }> = ({ f }) => {
   const a = SZENEN[0].start;
   const b = FINALE_START;
-  const d = fade(f, a, a + 10) * (1 - fade(f, b, b + 10));
+  const d = fade(f, a + 6, a + 16) * (1 - fade(f, b, b + 10));
   if (d <= 0) return null;
   const x = (fr: number) => 60 + ((fr - a) / (b - a)) * (W - 120);
   const jetzt = x(Math.min(Math.max(f, a), b));
-  const magStart = x(SZENEN[SZENEN.length - 1].start);
+  const magStart = x(SZENEN[N - 1].start);
   return (
     <svg width={W} height={60} style={{ position: "absolute", top: 12, opacity: d }}>
       <line x1={60} x2={W - 60} y1={22} y2={22} stroke={DS.background} strokeOpacity={0.45} strokeWidth={6} strokeLinecap="round" />
-      <line x1={60} x2={W - 60} y1={22} y2={22} stroke="#FFFFFF" strokeOpacity={0.22} strokeWidth={3} strokeLinecap="round" />
+      <line x1={60} x2={W - 60} y1={22} y2={22} stroke="#FFFFFF" strokeOpacity={0.25} strokeWidth={3} strokeLinecap="round" />
       <line x1={60} x2={Math.min(jetzt, magStart)} y1={22} y2={22} stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
       {jetzt > magStart ? <line x1={magStart} x2={jetzt} y1={22} y2={22} stroke={DS.primary} strokeWidth={3} strokeLinecap="round" /> : null}
       {SZENEN.map((s, i) => {
-        const cx = x(s.start);
         const aktiv = f >= s.start;
-        const mag = i === SZENEN.length - 1;
-        return <circle key={s.id} cx={cx} cy={22} r={aktiv ? 6 : 4.5} fill={aktiv ? (mag ? DS.primary : "#FFFFFF") : DS.background} stroke={mag ? DS.primary : "#FFFFFF"} strokeOpacity={0.8} strokeWidth={2} />;
+        const mag = i === N - 1;
+        return <circle key={s.id} cx={x(s.start)} cy={22} r={aktiv ? 6 : 4.5} fill={aktiv ? (mag ? DS.primary : "#FFFFFF") : DS.background} stroke={mag ? DS.primary : "#FFFFFF"} strokeOpacity={0.85} strokeWidth={2} />;
       })}
     </svg>
   );
@@ -487,59 +359,58 @@ const Fortschritt: React.FC<{ f: number }> = ({ f }) => {
 const LABEL_OBEN = 64;
 const LABEL_ZEILE = 84;
 const LABEL_H = 80;
-const labelStart = (zeile: number) => 1458 + zeile * 4;
+const labelStart = (zeile: number) => ZOOM_ENDE - 12 + zeile * 4;
 
-const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }) => {
-  const n = rects.length;
-  return (
-    <>
-      <svg width={W} height={H} style={{ position: "absolute" }}>
-        {rects.map((r, i) => {
-          const zeile = n - 1 - i;
-          const t0 = labelStart(zeile);
-          if (f < t0) return null;
-          const farbe = PROJEKTE[i].id === "mag7" ? DS.primary : DS.foreground;
-          const x = r.x + TIEFE3D_X / 2;
-          const y0 = LABEL_OBEN + zeile * LABEL_ZEILE + LABEL_H + 6;
-          const y1 = r.spitze + TIEFE3D_Y - 8;
-          const zug = expoOut(prog(f, t0 + 4, 16));
-          const punkt = spring({ frame: f - t0 - 14, fps: FPS, config: { damping: 9, stiffness: 200 } });
-          return (
-            <g key={i}>
-              <line x1={x} x2={x} y1={y0} y2={y0 + (y1 - y0) * zug} stroke={farbe} strokeWidth={2} strokeOpacity={0.7} />
-              <circle cx={x} cy={y1} r={4.5 * punkt} fill={farbe} />
-              <circle cx={x} cy={y1} r={4 + 14 * expoOut(prog(f, t0 + 14, 14))} fill="none" stroke={farbe} strokeOpacity={0.6 * (1 - prog(f, t0 + 14, 14))} strokeWidth={2} />
-            </g>
-          );
-        })}
-      </svg>
+const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }) => (
+  <>
+    <svg width={W} height={H} style={{ position: "absolute" }}>
       {rects.map((r, i) => {
-        const zeile = n - 1 - i;
+        const zeile = N - 1 - i;
         const t0 = labelStart(zeile);
         if (f < t0) return null;
-        const mag = PROJEKTE[i].id === "mag7";
-        const e = expoOut(prog(f, t0, 14));
+        const farbe = PROJEKTE[i].id === "mag7" ? DS.primary : DS.foreground;
+        const x = r.x + TIEFE3D_X / 2;
+        const y0 = LABEL_OBEN + zeile * LABEL_ZEILE + LABEL_H + 6;
+        const y1 = r.spitze + TIEFE3D_Y - 8;
+        const zug = expoOut(prog(f, t0 + 4, 16));
+        const punkt = spring({ frame: f - t0 - 14, fps: FPS, config: { damping: 9, stiffness: 200 } });
         return (
-          <div key={i} style={{ position: "absolute", right: W - (r.x + 30), top: LABEL_OBEN + zeile * LABEL_ZEILE, opacity: e, transform: `translateX(${(1 - e) * -24}px)`, textAlign: "right", fontSize: 36, lineHeight: "40px", whiteSpace: "nowrap" }}>
-            <div style={{ fontFamily: grotesk, fontWeight: 600, color: mag ? DS.primary : DS.foreground, textShadow: mag ? "0 0 24px rgba(76,214,118,0.45)" : undefined }}>{PROJEKTE[i].name}</div>
-            <div style={{ fontFamily: inter, color: mag ? DS.primary : DS.muted }}>{kostenKurz(i)}</div>
-          </div>
+          <g key={i}>
+            <line x1={x} x2={x} y1={y0} y2={y0 + (y1 - y0) * zug} stroke={farbe} strokeWidth={2} strokeOpacity={0.75} />
+            <circle cx={x} cy={y1} r={4.5 * punkt} fill={farbe} />
+            <circle cx={x} cy={y1} r={4 + 14 * expoOut(prog(f, t0 + 14, 14))} fill="none" stroke={farbe} strokeOpacity={0.6 * (1 - prog(f, t0 + 14, 14))} strokeWidth={2} />
+          </g>
         );
       })}
-    </>
-  );
-};
+    </svg>
+    {rects.map((r, i) => {
+      const zeile = N - 1 - i;
+      const t0 = labelStart(zeile);
+      if (f < t0) return null;
+      const mag = PROJEKTE[i].id === "mag7";
+      const e = expoOut(prog(f, t0, 14));
+      return (
+        <div key={i} style={{ position: "absolute", right: W - (r.x + 30), top: LABEL_OBEN + zeile * LABEL_ZEILE, opacity: e, transform: `translateX(${(1 - e) * -24}px)`, textAlign: "right", fontSize: 36, lineHeight: "40px", whiteSpace: "nowrap" }}>
+          <div style={{ fontFamily: grotesk, fontWeight: 600, color: mag ? DS.primary : DS.foreground, textShadow: mag ? "0 0 24px rgba(76,214,118,0.5)" : undefined }}>{PROJEKTE[i].name}</div>
+          <div style={{ fontFamily: inter, color: mag ? DS.primary : DS.muted }}>{formatMrd(PROJEKTE[i].kosten_mrd_usd)}</div>
+        </div>
+      );
+    })}
+  </>
+);
 
-const BURJ_ANZAHL = Math.floor(PROJEKTE[PROJEKTE.length - 1].kosten_mrd_usd / PROJEKTE[0].kosten_mrd_usd);
+const BURJ_ANZAHL = Math.floor(PROJEKTE[N - 1].kosten_mrd_usd / PROJEKTE[0].kosten_mrd_usd);
+const TITEL_START = ZOOM_ENDE + 14;
+const BURJ_START = ZOOM_ENDE + 62;
 
 const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => {
-  const ring = expoOut(prog(f, 1544, 20));
+  const ring = expoOut(prog(f, BURJ_START - 4, 20));
   const umfang = 2 * Math.PI * 38;
   const cx = burj.x + TIEFE3D_X / 2;
   const cy = burj.spitze + TIEFE3D_Y / 2;
-  const puls = prog(f, 1566, 24);
-  const zahl = Math.round(BURJ_ANZAHL * expoOut(prog(f, 1550, 30)));
-  const zeile: React.CSSProperties = { position: "absolute", left: 40, right: 40, top: 1228, textAlign: "center", color: DS.foreground, fontSize: 40, lineHeight: "48px" };
+  const puls = prog(f, BURJ_START + 18, 24);
+  const zahl = Math.round(BURJ_ANZAHL * expoOut(prog(f, BURJ_START + 2, 30)));
+  const zeile: React.CSSProperties = { position: "absolute", left: 40, right: 40, top: 1228, textAlign: "center", color: DS.foreground, fontSize: 42, lineHeight: "50px" };
   return (
     <>
       <svg width={W} height={H} style={{ position: "absolute" }}>
@@ -550,14 +421,14 @@ const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => 
           </>
         ) : null}
       </svg>
-      <div style={{ ...zeile, opacity: 1 - fade(f, 1532, 1540) }}>
-        <Woerter f={f} start={1484} text="Alle Stapel im echten Größenverhältnis" style={{ fontFamily: grotesk, fontWeight: 600 }} />
+      <div style={{ ...zeile, opacity: 1 - fade(f, BURJ_START - 12, BURJ_START - 4) }}>
+        <Woerter f={f} start={TITEL_START} text="All stacks to scale" style={{ fontFamily: grotesk, fontWeight: 600 }} />
       </div>
-      {f >= 1544 ? (
+      {f >= BURJ_START ? (
         <div style={{ ...zeile, fontFamily: inter }}>
-          <Zeile f={f} start={1546}>
-            Der KI-Capex könnte{" "}
-            <b style={{ fontFamily: grotesk, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{zahl} Burj Khalifas</b> bauen.
+          <Zeile f={f} start={BURJ_START}>
+            AI capex could build{" "}
+            <b style={{ fontFamily: grotesk, fontWeight: 700, color: DS.primary, fontVariantNumeric: "tabular-nums" }}>{zahl} Burj Khalifas.</b>
           </Zeile>
         </div>
       ) : null}
@@ -565,113 +436,64 @@ const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => 
   );
 };
 
-// ---------- Komposition ----------
+// ---------- Composition ----------
 export const DollarStapel: React.FC = () => {
   const f = useCurrentFrame();
-  const cam = camera(f);
-  const vorher = camera(f - 1);
-  const scheinPx = scheineKm(1) / cam.k;
-
-  // Motion Blur nur bei Schwenks: Bildgeschwindigkeit der Weltmitte.
-  let blurX = 0;
-  let blurY = 0;
-  if (cam.schwenk) {
-    const a = zuBild(camera(f - 0.5), cam.cx, cam.cy);
-    const b = zuBild(camera(f + 0.5), cam.cx, cam.cy);
-    blurX = Math.min(Math.abs(b[0] - a[0]) * 0.35, 40);
-    blurY = Math.min(Math.abs(b[1] - a[1]) * 0.35, 40);
-  }
-  const blur = blurX > 0.3 || blurY > 0.3;
-
-  const rects = PROJEKTE.map((_, i) => stapelRect(cam, stapelXKm(i), stapelHoeheKm(f, i)));
-  const kalRect = stapelRect(cam, KAL_X_KM, scheineKm(kalScheine(f)));
-  const [, bodenY] = zuBild(cam, 0, 0);
-
-  const karten = SZENEN.map((s, i) => ({ i, sichtbar: f >= karteStart(i) && f < s.ende + 6, unten: rects[i].spitze + TIEFE3D_Y / 2 - 122 - 14 })).filter((k) => k.sichtbar);
-  const kartenDeckung = (i: number) => fade(f, karteStart(i), karteStart(i) + 8) * (1 - fade(f, SZENEN[i].ende, SZENEN[i].ende + 6));
-
-  const e = erdeBild(cam);
-  const bloecke: Block[] = [
-    ...karten.map((k) => ({ links: 0, rechts: W, oben: 0, unten: k.unten, deckung: kartenDeckung(k.i) })),
-    ...KAL_TEXTE.map((t) => ({ links: 0, rechts: W, oben: KAL_TEXT_OBEN, unten: KAL_TEXT_UNTEN, deckung: kalDeckung(f, t) })),
-    ...rects.map((r, i) => ({ links: r.x - 70, rechts: r.x + 80, oben: r.spitze - 130, unten: r.basis, deckung: r.hoehePx > 0 ? Math.max(0.999 * clamp01(r.hoehePx), iconDeckung(f, i)) : 0 })),
-    { links: e.x - e.r, rechts: e.x + e.r, oben: e.y - e.r, unten: e.y + e.r, deckung: e.r > 2 ? 1 : 0 },
-  ];
-
-  // Tempo-Schlieren bei Schwenks
-  const schlieren = clamp01((blurX - 6) / 24);
+  const welt = f >= HEADLINE_ENDE - 10 && f < CRAWL_START + 20;
+  const cam = camera(Math.min(f, FINALE_ENDE - 1));
+  const vorher = camera(Math.min(Math.max(f - 1, 0), FINALE_ENDE - 1));
+  const rects = PROJEKTE.map((_, i) => stapelRect(cam, i, stapelHoeheKm(f, i)));
+  const imAll = clamp01(Math.log10(Math.max(hoeheBeiY(cam, H / 2), 1)) / 2);
 
   return (
     <AbsoluteFill style={{ fontFamily: inter, backgroundColor: DS.background, color: DS.foreground }}>
       <Html5Audio src={staticFile("musik.wav")} />
-      <Himmel cam={cam} />
-      <Sterne cam={cam} vorher={vorher} />
-      <svg width={W} height={H} style={{ position: "absolute" }}>
-        <defs>
-          <Verlaeufe />
-          <filter id="mb" filterUnits="userSpaceOnUse" x={-200} y={-200} width={W + 400} height={H + 400}>
-            <feGaussianBlur stdDeviation={`${blurX} ${blurY}`} />
-          </filter>
-        </defs>
-        {/* Boden ohne Blur, sonst verschmiert die Kante bei Schwenks */}
-        {bodenY < H ? (
-          <g>
-            <rect x={0} y={Math.max(bodenY, 0)} width={W} height={H - Math.max(bodenY, 0)} fill={DS.card} />
-            <line x1={0} x2={W} y1={bodenY} y2={bodenY} stroke={DS.borderStrong} strokeWidth={2} />
-          </g>
-        ) : null}
-        <g filter={blur ? "url(#mb)" : undefined}>
-          <Wolken cam={cam} vorne={false} />
-          <MarkerLinien cam={cam} />
-          <Erde cam={cam} />
-          {f < 290 ? <Silhouette cam={cam} xKm={HOCHHAUS_X_KM} profil={HOCHHAUS_PROFIL} /> : null}
-          <Silhouette cam={cam} xKm={BURJ_TURM_X_KM} profil={BURJ_PROFIL} />
-          {f < 290 ? <Stapel r={kalRect} mag={false} scheinPx={scheinPx} /> : null}
-          {f < 145 ? <FallenderSchein f={f} r={kalRect} scheinPx={scheinPx} /> : null}
-          {rects.map((r, i) => {
-            const s = SZENEN[i];
-            const licht = fade(f, wachsStart(s), wachsStart(s) + 4) * (1 - fade(f, wachsEnde(s) - 2, wachsEnde(s) + 8));
-            return <Stapel key={i} r={r} mag={PROJEKTE[i].id === "mag7"} scheinPx={scheinPx} licht={licht} />;
-          })}
-          {rects.map((r, i) => (
-            <Aufprall key={i} f={f} r={r} landung={wachsEnde(SZENEN[i])} mag={PROJEKTE[i].id === "mag7"} />
-          ))}
-          {rects.map((r, i) => {
-            const d = iconDeckung(f, i);
-            if (d <= 0) return null;
-            const s = iconDrop(f, wachsEnde(SZENEN[i]));
-            return (
-              <g key={i} transform={`translate(${r.x + TIEFE3D_X / 2 - 60} ${r.spitze + TIEFE3D_Y / 2 - 122 - (1 - s) * 90})`} opacity={d}>
-                <ProjektIcon id={PROJEKTE[i].id} />
-              </g>
-            );
-          })}
-          <Wolken cam={cam} vorne />
-        </g>
-        {schlieren > 0
-          ? [0, 1, 2, 3, 4, 5, 6].map((k) => {
-              const y = 150 + k * 147 + ((k * 53) % 40);
-              const len = 260 + ((k * 211) % 340);
-              const x = ((k * 397 + f * 160) % (W + 900)) - 450;
-              return <line key={k} x1={x} x2={x + len} y1={y} y2={y} stroke="#FFFFFF" strokeOpacity={0.18 * schlieren} strokeWidth={2} strokeLinecap="round" />;
-            })
-          : null}
-      </svg>
-      {/* Vignette */}
-      <AbsoluteFill style={{ background: "radial-gradient(ellipse 75% 70% at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.32) 100%)", opacity: clamp01(Math.log10(Math.max(hoeheBeiY(cam, H / 2), 1)) / 2) }} />
-      <ErdeLabel cam={cam} />
-      <MarkerLabels cam={cam} bloecke={bloecke} />
-      {f < 290 ? <Masslinie f={f} r={kalRect} /> : null}
-      <KalTitel f={f} />
-      {karten.map((k) => (
-        <Karte key={k.i} i={k.i} f={f} unten={k.unten} />
-      ))}
-      <Zaehler f={f} cam={cam} />
-      <Fortschritt f={f} />
-      {f >= 1450 && f < FINALE_ENDE + 20 ? <FinaleLabels f={f} rects={rects} /> : null}
-      {f >= 1480 && f < FINALE_ENDE + 20 ? <FinaleTexte f={f} burj={rects[0]} /> : null}
-      <Endcard f={f} />
-      <Hook f={f} />
+      {welt ? (
+        <>
+          <Himmel cam={cam} />
+          <Sterne cam={cam} vorher={vorher} />
+          <svg width={W} height={H} style={{ position: "absolute" }}>
+            <defs>
+              <Verlaeufe />
+            </defs>
+            <rect x={0} y={BASIS_Y - 180} width={W} height={180} fill="url(#horizont)" opacity={imAll} />
+            <rect x={0} y={BASIS_Y} width={W} height={H - BASIS_Y} fill={DS.card} />
+            <line x1={0} x2={W} y1={BASIS_Y} y2={BASIS_Y} stroke={DS.borderStrong} strokeWidth={2} />
+            <Wolken cam={cam} vorne={false} />
+            <Erde cam={cam} />
+            <Turm cam={cam} />
+            {rects.map((r, i) => {
+              const s = SZENEN[i];
+              const licht = fade(f, s.wachsStart, s.wachsStart + 4) * (1 - fade(f, s.wachsEnde - 2, s.wachsEnde + 8));
+              return <Stapel key={i} r={r} mag={PROJEKTE[i].id === "mag7"} licht={licht} />;
+            })}
+            {rects.map((r, i) => (
+              <Aufprall key={i} f={f} r={r} landung={SZENEN[i].wachsEnde} mag={PROJEKTE[i].id === "mag7"} />
+            ))}
+            {rects.map((r, i) => {
+              const d = iconDeckung(f, i);
+              if (d <= 0) return null;
+              const s = spring({ frame: f - SZENEN[i].wachsEnde, fps: FPS, config: { damping: 8, stiffness: 170, mass: 0.6 } });
+              return (
+                <g key={i} transform={`translate(${r.x + TIEFE3D_X / 2 - 60} ${r.spitze + TIEFE3D_Y / 2 - 122 - (1 - s) * 90})`} opacity={d}>
+                  <ProjektIcon id={PROJEKTE[i].id} />
+                </g>
+              );
+            })}
+            <Wolken cam={cam} vorne />
+          </svg>
+          <AbsoluteFill style={{ background: "radial-gradient(ellipse 75% 70% at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.32) 100%)", opacity: imAll }} />
+          <ErdeLabel cam={cam} f={f} />
+          <Erklaerung f={f} cam={cam} />
+          {PROJEKTE.map((_, i) => (f >= karteStart(i) && f < karteEnde(i) + 8 ? <Karte key={i} i={i} f={f} /> : null))}
+          <Zaehler f={f} cam={cam} />
+          <Fortschritt f={f} />
+          {f >= ZOOM_ENDE - 12 ? <FinaleLabels f={f} rects={rects} /> : null}
+          {f >= TITEL_START ? <FinaleTexte f={f} burj={rects[0]} /> : null}
+        </>
+      ) : null}
+      <Crawl f={f} />
+      <Intro f={f} />
     </AbsoluteFill>
   );
 };

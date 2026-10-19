@@ -1,6 +1,6 @@
 // Erzeugt public/musik.wav: steigende, weltraumartige Elektronik, 60 s, prozedural (keine Samples).
 import { writeFileSync, mkdirSync } from "node:fs";
-import { CRAWL_START, DAUER as FRAMES, FINALE_START, HEADLINE_ENDE, N as ANZAHL, SPRUNG, SZENEN, ZOOM_ENDE } from "../src/world.ts";
+import { CRAWL_START, DAUER as FRAMES, FINALE_START, HEADLINE_ENDE, INTRO_ENDE, N as ANZAHL, SPRUNG, SZENEN, ZOOM_ENDE } from "../src/world.ts";
 
 const SR = 44100;
 const T = (frame) => frame / 30; // frames → seconds
@@ -218,8 +218,13 @@ for (let b = Math.ceil(T(SZENEN[0].wachsEnde) / BEAT); b * BEAT < T_CRAWL - 0.2;
 
   // Intro: "AI" lands
   aufprall(sek(4), 0.45, 1318);
-  // Burj explainer card
-  klick(sek(HEADLINE_ENDE + 4), 0.08);
+  // Headline beats (timings as in src/intro.tsx)
+  const B1 = INTRO_ENDE - 2;
+  const B2 = B1 + 102;
+  klick(sek(B1 + 36), 0.1, 1760); // "AI" pill
+  [0, 8, 16].forEach((d) => klick(sek(B2 + d), 0.07, 2200));
+  aufprall(sek(B2 + 52), 0.25, 1568); // "$1 bills."
+  for (let i = 0; i < 12; i++) papier(sek(B2 + 58 + i * 3 + 8), 0.16);
   // Each stack: icon lands, card appears (no whoosh while stacks rise)
   SZENEN.forEach((s) => {
     const mag = s.id === "mag7";

@@ -5,7 +5,7 @@ import { DS, grotesk, inter, mono } from "./design.ts";
 import { Crawl } from "./crawl.tsx";
 import { ProjektIcon } from "./icons.tsx";
 import { Intro } from "./intro.tsx";
-import { formatHoehe, formatMrd, scheineKm } from "./scale.ts";
+import { formatHoehe, formatMrd } from "./scale.ts";
 import { clamp01, expoOut, Eyebrow, Glas, prog, Woerter, Zeile } from "./ui.tsx";
 import {
   aktiveSzene,
@@ -261,40 +261,19 @@ const Karte: React.FC<{ i: number; f: number }> = ({ i, f }) => {
   );
 };
 
-// ---------- Burj scene: how to read the stacks ----------
-const ERKL_START = HEADLINE_ENDE + 4;
-const ERKL_ENDE = SZENEN[0].wachsEnde - 4;
-const Erklaerung: React.FC<{ f: number; cam: Kamera }> = ({ f, cam }) => {
-  const aus = prog(f, ERKL_ENDE, 8);
-  if (f < ERKL_START || aus >= 1) return null;
+// ---------- Burj scene: label on the real tower ----------
+const TurmLabel: React.FC<{ f: number; cam: Kamera }> = ({ f, cam }) => {
+  const s = SZENEN[0];
+  const d = fade(f, s.start + 6, s.start + 14) * (1 - fade(f, s.wachsStart + 30, s.wachsStart + 38));
+  if (d <= 0) return null;
   const turmOben = BASIS_Y - 0.828 / cam.k;
-  const turmChip = fade(f, ERKL_START + 10, ERKL_START + 18) * (1 - fade(f, SZENEN[0].wachsStart + 14, SZENEN[0].wachsStart + 22));
   return (
-    <>
-      <div style={{ position: "absolute", left: 40, right: 40, top: KARTE_OBEN, opacity: 1 - aus }}>
-        <Glas wipe={expoOut(prog(f, ERKL_START, 14))} innen={{ padding: "22px 30px 24px" }}>
-          <Zeile f={f} start={ERKL_START + 3}>
-            <Eyebrow text="How to read this" />
-          </Zeile>
-          <Zeile f={f} start={ERKL_START + 6} style={{ marginTop: 10 }}>
-            <div style={{ fontFamily: grotesk, fontSize: 48, fontWeight: 600, lineHeight: "58px" }}>Each stack is made of $1 bills.</div>
-          </Zeile>
-          <Zeile f={f} start={ERKL_START + 10} style={{ marginTop: 6 }}>
-            <div style={{ fontFamily: inter, fontSize: 38, lineHeight: "48px", color: "#B4BDB8" }}>
-              One bill is {formatHoehe(scheineKm(1))} thick. Heights are to scale.
-            </div>
-          </Zeile>
-        </Glas>
-      </div>
-      {turmChip > 0 ? (
-        <div style={{ position: "absolute", right: W - (turmX(cam) - 60), top: Math.max(turmOben - 10, 420), opacity: turmChip, textAlign: "right" }}>
-          <Glas innen={{ padding: "8px 16px", lineHeight: "42px" }}>
-            <div style={{ fontFamily: grotesk, fontSize: 36, fontWeight: 600 }}>Burj Khalifa</div>
-            <div style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>828 m</div>
-          </Glas>
-        </div>
-      ) : null}
-    </>
+    <div style={{ position: "absolute", right: W - (turmX(cam) - 60), top: Math.max(turmOben - 10, 420), opacity: d, textAlign: "right" }}>
+      <Glas innen={{ padding: "8px 16px", lineHeight: "42px" }}>
+        <div style={{ fontFamily: grotesk, fontSize: 36, fontWeight: 600 }}>Burj Khalifa</div>
+        <div style={{ fontFamily: mono, fontSize: 36, color: DS.muted }}>828 m</div>
+      </Glas>
+    </div>
   );
 };
 
@@ -401,7 +380,7 @@ const FinaleLabels: React.FC<{ f: number; rects: StapelRect[] }> = ({ f, rects }
 
 const BURJ_ANZAHL = Math.floor(PROJEKTE[N - 1].kosten_mrd_usd / PROJEKTE[0].kosten_mrd_usd);
 const TITEL_START = ZOOM_ENDE + 14;
-const BURJ_START = ZOOM_ENDE + 62;
+const BURJ_START = ZOOM_ENDE + 80;
 
 const FinaleTexte: React.FC<{ f: number; burj: StapelRect }> = ({ f, burj }) => {
   const ring = expoOut(prog(f, BURJ_START - 4, 20));
@@ -484,7 +463,7 @@ export const DollarStapel: React.FC = () => {
           </svg>
           <AbsoluteFill style={{ background: "radial-gradient(ellipse 75% 70% at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.32) 100%)", opacity: imAll }} />
           <ErdeLabel cam={cam} f={f} />
-          <Erklaerung f={f} cam={cam} />
+          <TurmLabel f={f} cam={cam} />
           {PROJEKTE.map((_, i) => (f >= karteStart(i) && f < karteEnde(i) + 8 ? <Karte key={i} i={i} f={f} /> : null))}
           <Zaehler f={f} cam={cam} />
           <Fortschritt f={f} />

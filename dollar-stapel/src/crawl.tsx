@@ -53,7 +53,7 @@ export const Crawl: React.FC<{ f: number }> = ({ f }) => {
   const t = f - CRAWL_START;
   // slow scroll; at the jump the text rushes away into the distance
   const sprung = Math.pow(prog(f, SPRUNG - 20, 26), 2);
-  const y = 760 - t * 4.2 - sprung * 1600;
+  const y = 760 - t * 3.4 - sprung * 1600;
   const blitz = Math.sin(Math.PI * prog(f, SPRUNG - 2, 22));
   const schluss = expoOut(prog(f, SPRUNG + 8, 30));
   const fussnote = prog(f, SPRUNG + 40, 16);

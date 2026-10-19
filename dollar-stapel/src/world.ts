@@ -18,29 +18,29 @@ export const N = PROJEKTE.length;
 export const ERDE_R_KM = ERDE_DURCHMESSER_KM / 2;
 
 // ---------- Timeline ----------
-export const INTRO_ENDE = 60;
-export const HEADLINE_ENDE = 165;
+export const INTRO_ENDE = 70;
+export const HEADLINE_ENDE = 320;
 
 export type Szene = { id: string; start: number; ende: number; wachsStart: number; wachsEnde: number };
-const DAUERN = [120, 90, 90, 90, 105, 210];
-const GLEITEN = 14; // the row slides one slot left before the next stack grows
-const WACHSEN = [60, 48, 48, 48, 56, 140];
+const DAUERN = [150, 115, 115, 115, 125, 230];
+const GLEITEN = 16; // the row slides one slot left before the next stack grows
+const WACHSEN = [70, 56, 56, 56, 62, 160];
 export const SZENEN: Szene[] = (() => {
   let t = HEADLINE_ENDE;
   return PROJEKTE.map((p, i) => {
     const start = t;
     t += DAUERN[i];
-    const wachsStart = i === 0 ? start + 30 : start + GLEITEN;
+    const wachsStart = i === 0 ? start + 20 : start + GLEITEN;
     return { id: p.id, start, ende: t, wachsStart, wachsEnde: wachsStart + WACHSEN[i] };
   });
 })();
 
 export const FINALE_START = SZENEN[N - 1].ende; // 870
-export const ZOOM_ENDE = FINALE_START + 70;
-export const FINALE_ENDE = FINALE_START + 180; // 1050
+export const ZOOM_ENDE = FINALE_START + 80;
+export const FINALE_ENDE = FINALE_START + 240;
 export const CRAWL_START = FINALE_ENDE;
-export const SPRUNG = CRAWL_START + 240; // light-speed jump
-export const DAUER = SPRUNG + 120; // 1410 frames = 47 s
+export const SPRUNG = CRAWL_START + 300; // light-speed jump
+export const DAUER = SPRUNG + 140; // 1850 frames ≈ 62 s
 
 // ---------- Easing ----------
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));

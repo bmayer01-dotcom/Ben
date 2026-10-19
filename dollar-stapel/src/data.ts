@@ -48,7 +48,7 @@ export const PROJEKTE: Projekt[] = [
   },
   {
     id: "mag7",
-    name: "Mag7 Capex 2026",
+    name: "Hyperscaler Capex 2026",
     kosten_mrd_usd: 780,
     icon: "Server rack with chip",
     kontextzeile: "More than twice around the equator – in a single year",

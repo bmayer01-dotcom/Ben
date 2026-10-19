@@ -44,7 +44,7 @@ const Sternenfeld: React.FC<{ f: number }> = ({ f }) => {
 
 const ABSATZ: { text: string; hervor?: boolean }[][] = [
   [{ text: "The Manhattan Project, the ISS, the Marshall Plan, and Apollo rank among humanity’s most ambitious undertakings." }],
-  [{ text: "In 2026, seven companies are spending " }, { text: "more on AI than those four combined.", hervor: true }],
+  [{ text: "In 2026, five companies are spending " }, { text: "more on AI than those four combined.", hervor: true }],
 ];
 
 export const Crawl: React.FC<{ f: number }> = ({ f }) => {
@@ -105,7 +105,7 @@ export const Crawl: React.FC<{ f: number }> = ({ f }) => {
       ) : null}
       {fussnote > 0 ? (
         <div style={{ position: "absolute", left: 70, right: 70, bottom: 60, textAlign: "center", fontFamily: inter, fontSize: 36, lineHeight: "46px", color: DS.muted, opacity: fussnote * clamp01((DAUER - f) / 4) }}>
-          Heights to scale, widths not. Costs adjusted for inflation; Burj Khalifa nominal. Mag7: 2026 capex guidance incl. non-AI spending. One $1 bill: 0.109 mm.
+          Heights to scale, widths not. Costs adjusted for inflation; Burj Khalifa nominal. Hyperscalers: 2026 capex guidance incl. non-AI spending. One $1 bill: 0.109 mm.
         </div>
       ) : null}
     </AbsoluteFill>

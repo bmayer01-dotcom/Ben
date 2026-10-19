@@ -79,7 +79,7 @@ const Beat1: React.FC<{ f: number }> = ({ f }) => {
         </div>
       </Zeile>
       <div style={{ position: "relative", marginTop: 18 }}>
-        <Woerter f={f} start={B1 + 14} abstand={2} text="is what the Mag7 are investing" style={{ fontFamily: grotesk, fontWeight: 600, fontSize: 56, lineHeight: "68px", color: DS.foreground }} />
+        <Woerter f={f} start={B1 + 14} abstand={2} text="is what the five largest U.S. hyperscalers are investing" style={{ fontFamily: grotesk, fontWeight: 600, fontSize: 56, lineHeight: "68px", color: DS.foreground }} />
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 18, marginTop: 6 }}>
           <Woerter f={f} start={B1 + 26} text="in" style={{ fontFamily: grotesk, fontWeight: 600, fontSize: 56, lineHeight: "68px" }} />
           {/* "AI" lands in a glowing pill */}

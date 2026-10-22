@@ -462,7 +462,7 @@ Nach einem Lauf dieses Skills den Skill `skill-optimierung` nutzen, aber nur bei
 echtem Signal (Benedikt gibt Feedback, ein Lauf scheitert oder etwas musste
 korrigiert werden) und Änderungen nur mit ausdrücklicher Freigabe übernehmen.
 
-Budget: max. 475 Zeilen (aktuelle Größe, importierter Skill) · Gelernte Regeln max. 8
+Budget: max. 469 Zeilen (aktuelle Größe, importierter Skill) · Gelernte Regeln max. 8
 
 Stand: v1 · 2026-10-22 · Änderungen seit Konsolidierung: 0
 

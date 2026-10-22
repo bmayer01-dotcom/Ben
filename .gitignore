@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# API keys (z. B. KIE_AI_API_KEY für scroll-craft)
+.env
